@@ -1,0 +1,27 @@
+[package]
+name = "polars-faer"
+version = "0.0.1"
+edition = "2021"
+license = "BSD-3-Clause"
+description = "Dense numerical operations for Polars, backed by faer."
+publish = false
+
+[lib]
+name = "polars_faer"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+faer = "0.23.2"
+# `dtype-array` is not used directly, but the plugin bridge in pyo3-polars needs the
+# variant to be present in polars' value enum.
+polars = { version = "0.51.0", default-features = false, features = [
+    "dtype-array",
+    "dtype-struct",
+] }
+pyo3 = { version = "0.25", features = ["abi3-py310"] }
+pyo3-polars = { version = "0.24.0", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+
+[profile.release]
+opt-level = 3
+lto = "thin"

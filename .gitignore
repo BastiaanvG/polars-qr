@@ -1,0 +1,15 @@
+# Rust
+/target/
+Cargo.lock
+
+# Python
+__pycache__/
+*.py[cod]
+*.so
+*.pyd
+.venv/
+uv.lock
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+dist/
