@@ -5,3 +5,4 @@
 
 mod dense;
 mod expressions;
+mod least_squares;
