@@ -17,9 +17,10 @@ def least_squares(
     Parameters
     ----------
     targets
-        The column to fit.
+        The columns to fit. Several targets share one feature matrix and one sample, so
+        they are fitted in a single factorisation.
     features
-        The columns to fit it against. Their order is the order of the coefficients.
+        The columns to fit them against. Their order is the order of the coefficients.
     null_policy
         `"raise"` to fail on a row that is null or not finite, `"drop"` to leave it out.
         Rows are read jointly, so a row is either used by every column or by none.
@@ -44,6 +45,6 @@ def least_squares(
     return plugin_expr(
         "least_squares",
         [*target_columns, *feature_columns],
-        {"null_policy": null_policy},
+        {"n_targets": len(target_columns), "null_policy": null_policy},
         returns_scalar=True,
     )

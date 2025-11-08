@@ -17,6 +17,7 @@ fn plugin_version(_inputs: &[Series]) -> PolarsResult<Series> {
 
 #[derive(Deserialize)]
 struct LeastSquaresKwargs {
+    n_targets: usize,
     null_policy: NullPolicy,
 }
 
@@ -36,20 +37,25 @@ fn least_squares_dtype(_: &[Field]) -> PolarsResult<Field> {
     ))
 }
 
-/// Fit one target against a matrix of features.
+/// Fit one or several targets against a shared matrix of features.
 ///
-/// The first input is the target and the rest are the features. Rows are read jointly, so
-/// the null policy applies to the target and the features together.
+/// The first `n_targets` inputs are the targets and the rest are the features. Rows are read
+/// jointly, so the null policy applies to the targets and the features together and every
+/// target is fitted on the same sample.
 #[polars_expr(output_type_func=least_squares_dtype)]
 fn least_squares(inputs: &[Series], kwargs: LeastSquaresKwargs) -> PolarsResult<Series> {
-    if inputs.len() < 2 {
-        polars_bail!(InvalidOperation: "least_squares needs a target and at least one feature");
+    let n_targets = kwargs.n_targets;
+    if n_targets == 0 {
+        polars_bail!(InvalidOperation: "least_squares needs at least one target");
+    }
+    if inputs.len() <= n_targets {
+        polars_bail!(InvalidOperation: "least_squares needs at least one feature");
     }
 
     let dense = DenseFrame::from_series(inputs, kwargs.null_policy)?;
     let matrix = dense.matrix();
-    let targets = matrix.subcols(0, 1);
-    let features = matrix.subcols(1, dense.n_cols() - 1);
+    let targets = matrix.subcols(0, n_targets);
+    let features = matrix.subcols(n_targets, dense.n_cols() - n_targets);
 
     let fit = solve_qr(features, targets)?;
     let names = column_names(inputs);
@@ -57,8 +63,8 @@ fn least_squares(inputs: &[Series], kwargs: LeastSquaresKwargs) -> PolarsResult<
     result::struct_row(
         "least_squares",
         &[
-            result::string_list("features", &names[1..]),
-            result::string_list("targets", &names[..1]),
+            result::string_list("features", &names[n_targets..]),
+            result::string_list("targets", &names[..n_targets]),
             result::matrix_rows("coefficients", fit.coefficients.transpose()),
             result::count("n_observations", fit.n_observations),
             result::float_list("residual_sum_of_squares", &fit.residual_sum_of_squares),

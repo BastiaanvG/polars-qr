@@ -95,3 +95,30 @@ def test_a_non_numeric_column_is_rejected(frame):
     # Polars reports every failure raised inside a plugin as a compute error.
     with pytest.raises(pl.exceptions.ComputeError, match="not numeric"):
         labelled.select(pf.least_squares("y", ["a", "label"]))
+
+
+def test_several_targets_share_one_feature_matrix(frame):
+    out = frame.select(pf.least_squares(["y", "z"], FEATURES).alias("fit")).unnest("fit")
+
+    x = frame.select(FEATURES).to_numpy()
+    expected = np.linalg.lstsq(x, frame.select(["y", "z"]).to_numpy(), rcond=None)[0]
+    assert out["targets"][0].to_list() == ["y", "z"]
+    assert np.allclose(out["coefficients"][0].to_list(), expected.T)
+
+
+def test_fitting_targets_together_matches_fitting_them_apart(frame):
+    together = frame.select(pf.least_squares(["y", "z"], FEATURES).alias("fit")).unnest("fit")
+    apart = [
+        frame.select(pf.least_squares(target, FEATURES).alias("fit")).unnest("fit")
+        for target in ("y", "z")
+    ]
+
+    for index, single in enumerate(apart):
+        assert np.allclose(
+            together["coefficients"][0].to_list()[index],
+            single["coefficients"][0].to_list()[0],
+        )
+        assert np.allclose(
+            together["residual_sum_of_squares"][0].to_list()[index],
+            single["residual_sum_of_squares"][0].to_list()[0],
+        )
