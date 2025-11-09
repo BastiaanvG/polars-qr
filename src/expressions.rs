@@ -7,6 +7,7 @@ use serde::Deserialize;
 use crate::dense::{column_names, DenseFrame, NullPolicy};
 use crate::least_squares::solve_qr;
 use crate::result;
+use crate::weights::Weights;
 
 /// The version of the compiled plugin, so a stale build is easy to spot from Python.
 #[polars_expr(output_type=String)]
@@ -18,6 +19,7 @@ fn plugin_version(_inputs: &[Series]) -> PolarsResult<Series> {
 #[derive(Deserialize)]
 struct LeastSquaresKwargs {
     n_targets: usize,
+    weighted: bool,
     null_policy: NullPolicy,
 }
 
@@ -39,31 +41,40 @@ fn least_squares_dtype(_: &[Field]) -> PolarsResult<Field> {
 
 /// Fit one or several targets against a shared matrix of features.
 ///
-/// The first `n_targets` inputs are the targets and the rest are the features. Rows are read
-/// jointly, so the null policy applies to the targets and the features together and every
-/// target is fitted on the same sample.
+/// The inputs arrive as the targets, then the features, then the weight column when there
+/// is one. Rows are read jointly, so the null policy applies to all of them together and
+/// every target is fitted on the same sample.
 #[polars_expr(output_type_func=least_squares_dtype)]
 fn least_squares(inputs: &[Series], kwargs: LeastSquaresKwargs) -> PolarsResult<Series> {
     let n_targets = kwargs.n_targets;
+    let n_weights = usize::from(kwargs.weighted);
     if n_targets == 0 {
         polars_bail!(InvalidOperation: "least_squares needs at least one target");
     }
-    if inputs.len() <= n_targets {
+    if inputs.len() <= n_targets + n_weights {
         polars_bail!(InvalidOperation: "least_squares needs at least one feature");
     }
 
     let dense = DenseFrame::from_series(inputs, kwargs.null_policy)?;
     let matrix = dense.matrix();
+    let n_features = dense.n_cols() - n_targets - n_weights;
     let targets = matrix.subcols(0, n_targets);
-    let features = matrix.subcols(n_targets, dense.n_cols() - n_targets);
-
-    let fit = solve_qr(features, targets)?;
+    let features = matrix.subcols(n_targets, n_features);
     let names = column_names(inputs);
+
+    let fit = if kwargs.weighted {
+        let weights = Weights::new(matrix.subcols(dense.n_cols() - 1, 1), &names[names.len() - 1])?;
+        let features = weights.scale_rows(features);
+        let targets = weights.scale_rows(targets);
+        solve_qr(features.as_ref(), targets.as_ref())?
+    } else {
+        solve_qr(features, targets)?
+    };
 
     result::struct_row(
         "least_squares",
         &[
-            result::string_list("features", &names[n_targets..]),
+            result::string_list("features", &names[n_targets..n_targets + n_features]),
             result::string_list("targets", &names[..n_targets]),
             result::matrix_rows("coefficients", fit.coefficients.transpose()),
             result::count("n_observations", fit.n_observations),

@@ -122,3 +122,62 @@ def test_fitting_targets_together_matches_fitting_them_apart(frame):
             together["residual_sum_of_squares"][0].to_list()[index],
             single["residual_sum_of_squares"][0].to_list()[0],
         )
+
+
+def weighted_reference(frame, features=FEATURES, target="y", weight="weight"):
+    x = frame.select(features).to_numpy()
+    y = frame[target].to_numpy()
+    w = frame[weight].to_numpy()
+    root = np.sqrt(w)
+    return np.linalg.lstsq(x * root[:, None], y * root, rcond=None)
+
+
+def test_weights_reproduce_a_scaled_solve(frame):
+    out = frame.select(pf.least_squares("y", FEATURES, weights="weight").alias("fit")).unnest("fit")
+
+    coefficients, residuals, _, _ = weighted_reference(frame)
+    assert np.allclose(out["coefficients"][0].to_list()[0], coefficients)
+    assert np.allclose(out["residual_sum_of_squares"][0].to_list(), residuals)
+
+
+def test_equal_weights_leave_the_fit_unchanged(frame):
+    unweighted = frame.select(pf.least_squares("y", FEATURES).alias("fit")).unnest("fit")
+    weighted = (
+        frame.with_columns(pl.lit(2.0).alias("w"))
+        .select(pf.least_squares("y", FEATURES, weights="w").alias("fit"))
+        .unnest("fit")
+    )
+
+    assert np.allclose(
+        unweighted["coefficients"][0].to_list()[0],
+        weighted["coefficients"][0].to_list()[0],
+    )
+
+
+def test_a_zero_weight_drops_an_observation_from_the_fit(frame):
+    zeroed = frame.with_columns(
+        pl.when(pl.arange(0, frame.height) < 5).then(0.0).otherwise(1.0).alias("w")
+    )
+
+    out = zeroed.select(pf.least_squares("y", FEATURES, weights="w").alias("fit")).unnest("fit")
+
+    kept = frame.filter(pl.arange(0, frame.height) >= 5)
+    coefficients, _, _, _ = reference(kept)
+    assert np.allclose(out["coefficients"][0].to_list()[0], coefficients)
+    assert out["n_observations"][0] == frame.height
+
+
+def test_a_negative_weight_is_rejected(frame):
+    negative = frame.with_columns(
+        pl.when(pl.arange(0, frame.height) == 2).then(-1.0).otherwise(1.0).alias("w")
+    )
+
+    with pytest.raises(pl.exceptions.ComputeError, match="negative weight"):
+        negative.select(pf.least_squares("y", FEATURES, weights="w"))
+
+
+def test_weights_that_are_all_zero_are_rejected(frame):
+    zeroed = frame.with_columns(pl.lit(0.0).alias("w"))
+
+    with pytest.raises(pl.exceptions.ComputeError, match="no observation carries any weight"):
+        zeroed.select(pf.least_squares("y", FEATURES, weights="w"))

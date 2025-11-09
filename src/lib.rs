@@ -7,3 +7,4 @@ mod dense;
 mod expressions;
 mod least_squares;
 mod result;
+mod weights;

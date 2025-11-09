@@ -1,7 +1,7 @@
 import polars as pl
 
 from polars_faer._plugin import plugin_expr
-from polars_faer._typing import IntoExprColumns, NullPolicy, as_expressions
+from polars_faer._typing import IntoExpr, IntoExprColumns, NullPolicy, as_expressions
 
 __all__ = ["least_squares"]
 
@@ -10,6 +10,7 @@ def least_squares(
     targets: IntoExprColumns,
     features: IntoExprColumns,
     *,
+    weights: IntoExpr | None = None,
     null_policy: NullPolicy = "raise",
 ) -> pl.Expr:
     """Fit `targets` against `features` in the least-squares sense.
@@ -21,6 +22,10 @@ def least_squares(
         they are fitted in a single factorisation.
     features
         The columns to fit them against. Their order is the order of the coefficients.
+    weights
+        An optional column of observation weights, which must be finite and non-negative.
+        The fit minimises the weighted sum of squared residuals, and the reported residual
+        sums of squares are weighted too.
     null_policy
         `"raise"` to fail on a row that is null or not finite, `"drop"` to leave it out.
         Rows are read jointly, so a row is either used by every column or by none.
@@ -42,9 +47,14 @@ def least_squares(
     """
     target_columns = as_expressions(targets)
     feature_columns = as_expressions(features)
+    weight_columns = [] if weights is None else as_expressions(weights)
     return plugin_expr(
         "least_squares",
-        [*target_columns, *feature_columns],
-        {"n_targets": len(target_columns), "null_policy": null_policy},
+        [*target_columns, *feature_columns, *weight_columns],
+        {
+            "n_targets": len(target_columns),
+            "weighted": weights is not None,
+            "null_policy": null_policy,
+        },
         returns_scalar=True,
     )
