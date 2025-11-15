@@ -5,7 +5,7 @@ use pyo3_polars::derive::polars_expr;
 use serde::Deserialize;
 
 use crate::dense::{column_names, DenseFrame, NullPolicy};
-use crate::least_squares::solve_qr;
+use crate::least_squares;
 use crate::result;
 use crate::weights::Weights;
 
@@ -20,6 +20,7 @@ fn plugin_version(_inputs: &[Series]) -> PolarsResult<Series> {
 struct LeastSquaresKwargs {
     n_targets: usize,
     weighted: bool,
+    intercept: bool,
     null_policy: NullPolicy,
 }
 
@@ -30,6 +31,7 @@ fn least_squares_dtype(_: &[Field]) -> PolarsResult<Field> {
             Field::new("features".into(), result::string_list_dtype()),
             Field::new("targets".into(), result::string_list_dtype()),
             Field::new("coefficients".into(), result::matrix_dtype()),
+            Field::new("intercept".into(), result::float_list_dtype()),
             Field::new("n_observations".into(), DataType::UInt32),
             Field::new(
                 "residual_sum_of_squares".into(),
@@ -62,14 +64,14 @@ fn least_squares(inputs: &[Series], kwargs: LeastSquaresKwargs) -> PolarsResult<
     let features = matrix.subcols(n_targets, n_features);
     let names = column_names(inputs);
 
-    let fit = if kwargs.weighted {
-        let weights = Weights::new(matrix.subcols(dense.n_cols() - 1, 1), &names[names.len() - 1])?;
-        let features = weights.scale_rows(features);
-        let targets = weights.scale_rows(targets);
-        solve_qr(features.as_ref(), targets.as_ref())?
-    } else {
-        solve_qr(features, targets)?
+    let weights = kwargs
+        .weighted
+        .then(|| Weights::new(matrix.subcols(dense.n_cols() - 1, 1), &names[names.len() - 1]))
+        .transpose()?;
+    let options = least_squares::Options {
+        intercept: kwargs.intercept,
     };
+    let fit = least_squares::fit(features, targets, weights.as_ref(), &options)?;
 
     result::struct_row(
         "least_squares",
@@ -77,6 +79,7 @@ fn least_squares(inputs: &[Series], kwargs: LeastSquaresKwargs) -> PolarsResult<
             result::string_list("features", &names[n_targets..n_targets + n_features]),
             result::string_list("targets", &names[..n_targets]),
             result::matrix_rows("coefficients", fit.coefficients.transpose()),
+            result::optional_float_list("intercept", fit.intercept.as_deref()),
             result::count("n_observations", fit.n_observations),
             result::float_list("residual_sum_of_squares", &fit.residual_sum_of_squares),
         ],

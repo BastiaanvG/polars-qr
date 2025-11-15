@@ -181,3 +181,47 @@ def test_weights_that_are_all_zero_are_rejected(frame):
 
     with pytest.raises(pl.exceptions.ComputeError, match="no observation carries any weight"):
         zeroed.select(pf.least_squares("y", FEATURES, weights="w"))
+
+
+def test_no_intercept_is_fitted_by_default(frame):
+    out = frame.select(pf.least_squares("y", FEATURES).alias("fit")).unnest("fit")
+
+    assert out["intercept"][0] is None
+
+
+def test_an_intercept_matches_an_explicit_constant_column(frame):
+    out = frame.select(pf.least_squares("y", FEATURES, intercept=True).alias("fit")).unnest("fit")
+
+    x = np.column_stack([np.ones(frame.height), frame.select(FEATURES).to_numpy()])
+    expected = np.linalg.lstsq(x, frame["y"].to_numpy(), rcond=None)[0]
+    assert np.allclose(out["intercept"][0].to_list(), expected[0])
+    assert np.allclose(out["coefficients"][0].to_list()[0], expected[1:])
+    assert out["features"][0].to_list() == FEATURES
+
+
+def test_an_intercept_absorbs_a_shifted_target(frame):
+    shifted = frame.with_columns((pl.col("y") + 10.0).alias("shifted"))
+
+    plain = shifted.select(pf.least_squares("y", FEATURES, intercept=True).alias("fit")).unnest(
+        "fit"
+    )
+    moved = shifted.select(
+        pf.least_squares("shifted", FEATURES, intercept=True).alias("fit")
+    ).unnest("fit")
+
+    assert np.allclose(plain["coefficients"][0].to_list(), moved["coefficients"][0].to_list())
+    assert np.allclose(
+        plain["intercept"][0].to_list()[0] + 10.0, moved["intercept"][0].to_list()[0]
+    )
+
+
+def test_a_weighted_intercept_matches_a_scaled_solve(frame):
+    out = frame.select(
+        pf.least_squares("y", FEATURES, weights="weight", intercept=True).alias("fit")
+    ).unnest("fit")
+
+    root = np.sqrt(frame["weight"].to_numpy())
+    x = np.column_stack([np.ones(frame.height), frame.select(FEATURES).to_numpy()])
+    expected = np.linalg.lstsq(x * root[:, None], frame["y"].to_numpy() * root, rcond=None)[0]
+    assert np.allclose(out["intercept"][0].to_list(), expected[0])
+    assert np.allclose(out["coefficients"][0].to_list()[0], expected[1:])

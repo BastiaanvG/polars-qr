@@ -13,6 +13,14 @@ pub fn float_list(name: &str, values: &[f64]) -> Series {
     Series::new(name.into(), [inner])
 }
 
+/// One row holding the list `values`, or a null when there is nothing to report.
+pub fn optional_float_list(name: &str, values: Option<&[f64]>) -> Series {
+    match values {
+        Some(values) => float_list(name, values),
+        None => Series::full_null(name.into(), 1, &float_list_dtype()),
+    }
+}
+
 /// One row holding the list `values`.
 pub fn string_list(name: &str, values: &[String]) -> Series {
     let inner = Series::new(name.into(), values);

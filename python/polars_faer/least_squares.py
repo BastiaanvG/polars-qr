@@ -11,6 +11,7 @@ def least_squares(
     features: IntoExprColumns,
     *,
     weights: IntoExpr | None = None,
+    intercept: bool = False,
     null_policy: NullPolicy = "raise",
 ) -> pl.Expr:
     """Fit `targets` against `features` in the least-squares sense.
@@ -26,6 +27,9 @@ def least_squares(
         An optional column of observation weights, which must be finite and non-negative.
         The fit minimises the weighted sum of squared residuals, and the reported residual
         sums of squares are weighted too.
+    intercept
+        Whether to fit a constant term alongside the features. It is reported on its own,
+        so `features` and `coefficients` keep lining up.
     null_policy
         `"raise"` to fail on a row that is null or not finite, `"drop"` to leave it out.
         Rows are read jointly, so a row is either used by every column or by none.
@@ -40,6 +44,8 @@ def least_squares(
         The target names.
     `coefficients`
         One list of coefficients per target, ordered like `features`.
+    `intercept`
+        The constant term, one entry per target, or null when none was fitted.
     `n_observations`
         The number of rows the fit used.
     `residual_sum_of_squares`
@@ -54,6 +60,7 @@ def least_squares(
         {
             "n_targets": len(target_columns),
             "weighted": weights is not None,
+            "intercept": intercept,
             "null_policy": null_policy,
         },
         returns_scalar=True,
