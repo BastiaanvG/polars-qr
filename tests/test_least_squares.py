@@ -225,3 +225,45 @@ def test_a_weighted_intercept_matches_a_scaled_solve(frame):
     expected = np.linalg.lstsq(x * root[:, None], frame["y"].to_numpy() * root, rcond=None)[0]
     assert np.allclose(out["intercept"][0].to_list(), expected[0])
     assert np.allclose(out["coefficients"][0].to_list()[0], expected[1:])
+
+
+def test_the_two_solvers_agree_on_a_well_posed_system(frame):
+    by_qr = frame.select(pf.least_squares("y", FEATURES).alias("fit")).unnest("fit")
+    by_svd = frame.select(pf.least_squares("y", FEATURES, solver="svd").alias("fit")).unnest("fit")
+
+    assert np.allclose(by_qr["coefficients"][0].to_list(), by_svd["coefficients"][0].to_list())
+    assert np.allclose(
+        by_qr["residual_sum_of_squares"][0].to_list(),
+        by_svd["residual_sum_of_squares"][0].to_list(),
+    )
+
+
+def test_an_svd_solve_matches_the_reference_on_a_duplicated_feature(frame):
+    duplicated = frame.with_columns(pl.col("a").alias("a_again"))
+    columns = [*FEATURES, "a_again"]
+
+    out = duplicated.select(pf.least_squares("y", columns, solver="svd").alias("fit")).unnest("fit")
+
+    x = duplicated.select(columns).to_numpy()
+    expected = np.linalg.lstsq(x, duplicated["y"].to_numpy(), rcond=None)[0]
+    assert np.allclose(out["coefficients"][0].to_list()[0], expected)
+
+
+def test_an_svd_solve_handles_more_features_than_rows(rng):
+    narrow = pl.DataFrame({name: rng.normal(size=3) for name in ("y", "a", "b", "c", "d", "e")})
+
+    out = narrow.select(
+        pf.least_squares("y", ["a", "b", "c", "d", "e"], solver="svd").alias("fit")
+    ).unnest("fit")
+
+    x = narrow.select(["a", "b", "c", "d", "e"]).to_numpy()
+    expected = np.linalg.lstsq(x, narrow["y"].to_numpy(), rcond=None)[0]
+    assert np.allclose(out["coefficients"][0].to_list()[0], expected)
+    assert out["residual_sum_of_squares"][0].to_list()[0] < 1e-20
+
+
+def test_a_qr_solve_refuses_an_underdetermined_system(rng):
+    narrow = pl.DataFrame({name: rng.normal(size=3) for name in ("y", "a", "b", "c", "d")})
+
+    with pytest.raises(pl.exceptions.ComputeError, match="at least as many observations"):
+        narrow.select(pf.least_squares("y", ["a", "b", "c", "d"]))

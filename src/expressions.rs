@@ -5,7 +5,7 @@ use pyo3_polars::derive::polars_expr;
 use serde::Deserialize;
 
 use crate::dense::{column_names, DenseFrame, NullPolicy};
-use crate::least_squares;
+use crate::least_squares::{self, Solver};
 use crate::result;
 use crate::weights::Weights;
 
@@ -21,6 +21,7 @@ struct LeastSquaresKwargs {
     n_targets: usize,
     weighted: bool,
     intercept: bool,
+    solver: Solver,
     null_policy: NullPolicy,
 }
 
@@ -70,6 +71,7 @@ fn least_squares(inputs: &[Series], kwargs: LeastSquaresKwargs) -> PolarsResult<
         .transpose()?;
     let options = least_squares::Options {
         intercept: kwargs.intercept,
+        solver: kwargs.solver,
     };
     let fit = least_squares::fit(features, targets, weights.as_ref(), &options)?;
 

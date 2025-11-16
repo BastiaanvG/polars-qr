@@ -1,7 +1,7 @@
 import polars as pl
 
 from polars_faer._plugin import plugin_expr
-from polars_faer._typing import IntoExpr, IntoExprColumns, NullPolicy, as_expressions
+from polars_faer._typing import IntoExpr, IntoExprColumns, NullPolicy, Solver, as_expressions
 
 __all__ = ["least_squares"]
 
@@ -12,6 +12,7 @@ def least_squares(
     *,
     weights: IntoExpr | None = None,
     intercept: bool = False,
+    solver: Solver = "qr",
     null_policy: NullPolicy = "raise",
 ) -> pl.Expr:
     """Fit `targets` against `features` in the least-squares sense.
@@ -30,6 +31,10 @@ def least_squares(
     intercept
         Whether to fit a constant term alongside the features. It is reported on its own,
         so `features` and `coefficients` keep lining up.
+    solver
+        `"qr"` for a QR factorisation, which is the faster route and needs the features to
+        have full column rank, or `"svd"` for a thin SVD, which also solves rank-deficient
+        and underdetermined systems and returns the solution of smallest norm.
     null_policy
         `"raise"` to fail on a row that is null or not finite, `"drop"` to leave it out.
         Rows are read jointly, so a row is either used by every column or by none.
@@ -61,6 +66,7 @@ def least_squares(
             "n_targets": len(target_columns),
             "weighted": weights is not None,
             "intercept": intercept,
+            "solver": solver,
             "null_policy": null_policy,
         },
         returns_scalar=True,

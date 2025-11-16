@@ -80,6 +80,11 @@ ignore = [
 [tool.ruff.lint.pydocstyle]
 convention = "numpy"
 
+[tool.ruff.lint.pylint]
+# The operations take their options as keyword arguments, and there are more than five of
+# them once weighting, the solver and the null policy are all spelled out.
+max-args = 10
+
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = [
     "ANN",     # tests need no annotations

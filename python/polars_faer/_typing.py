@@ -9,6 +9,8 @@ IntoExprColumns = IntoExpr | Sequence[IntoExpr]
 
 NullPolicy = Literal["raise", "drop"]
 
+Solver = Literal["qr", "svd"]
+
 
 def as_expressions(columns: IntoExprColumns) -> list[pl.Expr]:
     """Normalise a column argument into a list of expressions.
