@@ -48,8 +48,16 @@ pub struct LeastSquaresFit {
     pub intercept: Option<Vec<f64>>,
     /// The number of observations the fit used.
     pub n_observations: usize,
+    /// The numerical rank of the design matrix.
+    pub rank: usize,
     /// The squared norm of the residual, one entry per target.
     pub residual_sum_of_squares: Vec<f64>,
+    /// The singular values of the design matrix, when the solver computed them.
+    pub singular_values: Option<Vec<f64>>,
+    /// An estimate of the condition number of the design matrix.
+    pub condition: f64,
+    /// Which factorisation produced the fit.
+    pub solver: Solver,
 }
 
 /// Fit `targets` against `features` in the least-squares sense.
@@ -89,8 +97,11 @@ pub fn fit(
         None => (design, targets.to_owned()),
     };
 
-    let solution = match options.solver {
-        Solver::Qr => design.qr().solve_lstsq(&scaled_targets),
+    let (solution, diagnostics) = match options.solver {
+        Solver::Qr => {
+            let qr = design.qr();
+            (qr.solve_lstsq(&scaled_targets), from_qr(qr.thin_R()))
+        }
         Solver::Svd => solve_svd(design.as_ref(), scaled_targets.as_ref())?,
     };
     let residual_sum_of_squares =
@@ -103,31 +114,78 @@ pub fn fit(
         coefficients,
         intercept,
         n_observations: n,
+        rank: diagnostics.rank,
         residual_sum_of_squares,
+        singular_values: diagnostics.singular_values,
+        condition: diagnostics.condition,
+        solver: options.solver,
     })
+}
+
+/// What a factorisation says about the conditioning of the design matrix.
+struct Diagnostics {
+    rank: usize,
+    singular_values: Option<Vec<f64>>,
+    condition: f64,
+}
+
+/// Read the rank and conditioning off the diagonal of a QR factor.
+///
+/// The ratio of the largest to the smallest diagonal entry of `R` is only an estimate of
+/// the condition number, but it costs nothing on top of a factorisation that has already
+/// been computed.
+fn from_qr(r: MatRef<'_, f64>) -> Diagnostics {
+    let diagonal: Vec<f64> = (0..r.ncols()).map(|i| r[(i, i)].abs()).collect();
+    let largest = diagonal.iter().copied().fold(0.0, f64::max);
+    let smallest = diagonal.iter().copied().fold(f64::INFINITY, f64::min);
+    let threshold = singular_value_threshold(r.nrows(), r.ncols(), largest);
+    Diagnostics {
+        rank: diagonal.iter().filter(|value| **value > threshold).count(),
+        singular_values: None,
+        condition: if smallest > 0.0 {
+            largest / smallest
+        } else {
+            f64::INFINITY
+        },
+    }
 }
 
 /// Solve through a thin SVD, discarding the directions that carry no signal.
 ///
 /// Singular values below the threshold are treated as zero rather than inverted, which is
 /// what makes this the solution of smallest norm when the system does not pin one down.
-fn solve_svd(design: MatRef<'_, f64>, targets: MatRef<'_, f64>) -> PolarsResult<Mat<f64>> {
+fn solve_svd(
+    design: MatRef<'_, f64>,
+    targets: MatRef<'_, f64>,
+) -> PolarsResult<(Mat<f64>, Diagnostics)> {
     let svd = design
         .thin_svd()
         .map_err(|error| polars_err!(ComputeError: "the SVD did not converge: {:?}", error))?;
     let singular = svd.S().column_vector();
-    let threshold = singular_value_threshold(design.nrows(), design.ncols(), singular[0]);
+    let values: Vec<f64> = (0..singular.nrows()).map(|i| singular[i]).collect();
+    let threshold = singular_value_threshold(design.nrows(), design.ncols(), values[0]);
 
     // beta = V * diag(1 / s) * U^T * y, over the directions above the threshold only.
     let projected = svd.U().transpose() * targets;
     let scaled = Mat::from_fn(projected.nrows(), projected.ncols(), |i, j| {
-        if singular[i] > threshold {
-            projected[(i, j)] / singular[i]
+        if values[i] > threshold {
+            projected[(i, j)] / values[i]
         } else {
             0.0
         }
     });
-    Ok(svd.V() * scaled)
+
+    let smallest = *values.last().unwrap_or(&0.0);
+    let diagnostics = Diagnostics {
+        rank: values.iter().filter(|value| **value > threshold).count(),
+        condition: if smallest > 0.0 {
+            values[0] / smallest
+        } else {
+            f64::INFINITY
+        },
+        singular_values: Some(values),
+    };
+    Ok((svd.V() * scaled, diagnostics))
 }
 
 /// The size below which a singular value is treated as zero.
@@ -231,7 +289,10 @@ mod tests {
             x.as_ref(),
             y.as_ref(),
             None,
-            &Options { intercept: true, solver: Solver::Qr },
+            &Options {
+                intercept: true,
+                solver: Solver::Qr,
+            },
         )
         .unwrap();
 
@@ -253,7 +314,10 @@ mod tests {
             x.as_ref(),
             y.as_ref(),
             Some(&weights),
-            &Options { intercept: true, solver: Solver::Qr },
+            &Options {
+                intercept: true,
+                solver: Solver::Qr,
+            },
         )
         .unwrap();
 
@@ -276,6 +340,51 @@ mod tests {
         assert!(
             (by_qr.residual_sum_of_squares[0] - by_svd.residual_sum_of_squares[0]).abs() < 1e-12
         );
+    }
+
+    #[test]
+    fn both_solvers_see_the_full_rank_of_a_well_posed_system() {
+        let x = matrix(&[&[1.0, 0.0], &[0.0, 1.0], &[1.0, 1.0], &[2.0, 1.0]]);
+        let y = matrix(&[&[2.0], &[-1.0], &[1.5], &[3.0]]);
+
+        let by_qr = fit(x.as_ref(), y.as_ref(), None, &plain()).unwrap();
+        let by_svd = fit(x.as_ref(), y.as_ref(), None, &with_svd()).unwrap();
+
+        assert_eq!(by_qr.rank, 2);
+        assert_eq!(by_svd.rank, 2);
+        assert!(by_qr.singular_values.is_none());
+        assert_eq!(by_svd.singular_values.as_ref().unwrap().len(), 2);
+        assert!(by_qr.condition.is_finite());
+        assert!(by_svd.condition > 1.0);
+    }
+
+    #[test]
+    fn a_duplicated_feature_costs_a_rank() {
+        let x = matrix(&[&[1.0, 1.0], &[2.0, 2.0], &[3.0, 3.0]]);
+        let y = matrix(&[&[2.0], &[4.0], &[6.0]]);
+
+        let by_svd = fit(x.as_ref(), y.as_ref(), None, &with_svd()).unwrap();
+        let by_qr = fit(x.as_ref(), y.as_ref(), None, &plain()).unwrap();
+
+        assert_eq!(by_svd.rank, 1);
+        assert_eq!(by_qr.rank, 1);
+        // The dependent direction does not come out of the factorisation as exactly zero,
+        // so the condition estimate is enormous rather than infinite. The rank is what
+        // says the system is deficient.
+        assert!(by_svd.condition > 1e12);
+    }
+
+    #[test]
+    fn the_singular_values_come_back_in_decreasing_order() {
+        let x = matrix(&[&[3.0, 0.0], &[0.0, 1.0], &[0.0, 0.0]]);
+        let y = matrix(&[&[1.0], &[1.0], &[1.0]]);
+
+        let fit = fit(x.as_ref(), y.as_ref(), None, &with_svd()).unwrap();
+
+        let values = fit.singular_values.unwrap();
+        assert!((values[0] - 3.0).abs() < 1e-12);
+        assert!((values[1] - 1.0).abs() < 1e-12);
+        assert!((fit.condition - 3.0).abs() < 1e-12);
     }
 
     #[test]
@@ -319,7 +428,16 @@ mod tests {
         let y = matrix(&[&[1.0], &[2.0]]);
 
         assert!(fit(x.as_ref(), y.as_ref(), None, &plain()).is_ok());
-        assert!(fit(x.as_ref(), y.as_ref(), None, &Options { intercept: true, solver: Solver::Qr }).is_ok());
+        assert!(fit(
+            x.as_ref(),
+            y.as_ref(),
+            None,
+            &Options {
+                intercept: true,
+                solver: Solver::Qr
+            }
+        )
+        .is_ok());
 
         let one_row = matrix(&[&[1.0]]);
         let one_target = matrix(&[&[1.0]]);
@@ -328,7 +446,10 @@ mod tests {
             one_row.as_ref(),
             one_target.as_ref(),
             None,
-            &Options { intercept: true, solver: Solver::Qr }
+            &Options {
+                intercept: true,
+                solver: Solver::Qr
+            }
         )
         .is_err());
     }

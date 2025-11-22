@@ -100,7 +100,14 @@ mod tests {
         let rows = series.list().unwrap().get_as_series(0).unwrap();
         assert_eq!(rows.len(), 2);
         let second = rows.list().unwrap().get_as_series(1).unwrap();
-        assert_eq!(second.f64().unwrap().into_no_null_iter().collect::<Vec<_>>(), [3.0, 4.0, 5.0]);
+        assert_eq!(
+            second
+                .f64()
+                .unwrap()
+                .into_no_null_iter()
+                .collect::<Vec<_>>(),
+            [3.0, 4.0, 5.0]
+        );
     }
 
     #[test]

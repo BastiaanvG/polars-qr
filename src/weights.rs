@@ -51,7 +51,9 @@ impl Weights {
     /// sum of squared residuals of the original one.
     pub fn scale_rows(&self, matrix: MatRef<'_, f64>) -> Mat<f64> {
         let roots: Vec<f64> = self.values.iter().map(|weight| weight.sqrt()).collect();
-        Mat::from_fn(matrix.nrows(), matrix.ncols(), |i, j| roots[i] * matrix[(i, j)])
+        Mat::from_fn(matrix.nrows(), matrix.ncols(), |i, j| {
+            roots[i] * matrix[(i, j)]
+        })
     }
 }
 

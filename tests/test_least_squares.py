@@ -267,3 +267,41 @@ def test_a_qr_solve_refuses_an_underdetermined_system(rng):
 
     with pytest.raises(pl.exceptions.ComputeError, match="at least as many observations"):
         narrow.select(pf.least_squares("y", ["a", "b", "c", "d"]))
+
+
+def test_a_full_rank_fit_reports_its_rank_and_solver(frame):
+    out = frame.select(pf.least_squares("y", FEATURES).alias("fit")).unnest("fit")
+
+    assert out["rank"][0] == len(FEATURES)
+    assert out["solver"][0] == "qr"
+    assert out["singular_values"][0] is None
+    assert out["condition"][0] > 1.0
+
+
+def test_an_svd_fit_reports_the_singular_values(frame):
+    out = frame.select(pf.least_squares("y", FEATURES, solver="svd").alias("fit")).unnest("fit")
+
+    x = frame.select(FEATURES).to_numpy()
+    assert out["solver"][0] == "svd"
+    assert np.allclose(out["singular_values"][0].to_list(), np.linalg.svd(x, compute_uv=False))
+    assert np.isclose(out["condition"][0], np.linalg.cond(x))
+
+
+def test_a_dependent_feature_lowers_the_reported_rank(frame):
+    dependent = frame.with_columns((pl.col("a") * 2.0).alias("twice_a"))
+
+    out = dependent.select(
+        pf.least_squares("y", [*FEATURES, "twice_a"], solver="svd").alias("fit")
+    ).unnest("fit")
+
+    assert out["rank"][0] == len(FEATURES)
+    assert out["condition"][0] > 1e12
+
+
+def test_the_intercept_counts_towards_the_rank(frame):
+    out = frame.select(
+        pf.least_squares("y", FEATURES, intercept=True, solver="svd").alias("fit")
+    ).unnest("fit")
+
+    assert out["rank"][0] == len(FEATURES) + 1
+    assert len(out["singular_values"][0].to_list()) == len(FEATURES) + 1

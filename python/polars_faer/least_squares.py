@@ -53,8 +53,18 @@ def least_squares(
         The constant term, one entry per target, or null when none was fitted.
     `n_observations`
         The number of rows the fit used.
+    `rank`
+        The numerical rank of the design matrix, the constant term included.
     `residual_sum_of_squares`
         The squared norm of the residual, one entry per target.
+    `singular_values`
+        The singular values of the design matrix under `solver="svd"`, else null.
+    `condition`
+        An estimate of the condition number of the design matrix. Under `solver="qr"` it
+        is read off the diagonal of the QR factor, which is cheaper and rougher than the
+        ratio of singular values reported under `solver="svd"`.
+    `solver`
+        The name of the factorisation that produced the fit.
     """
     target_columns = as_expressions(targets)
     feature_columns = as_expressions(features)

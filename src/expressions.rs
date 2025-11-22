@@ -34,10 +34,11 @@ fn least_squares_dtype(_: &[Field]) -> PolarsResult<Field> {
             Field::new("coefficients".into(), result::matrix_dtype()),
             Field::new("intercept".into(), result::float_list_dtype()),
             Field::new("n_observations".into(), DataType::UInt32),
-            Field::new(
-                "residual_sum_of_squares".into(),
-                result::float_list_dtype(),
-            ),
+            Field::new("rank".into(), DataType::UInt32),
+            Field::new("residual_sum_of_squares".into(), result::float_list_dtype()),
+            Field::new("singular_values".into(), result::float_list_dtype()),
+            Field::new("condition".into(), DataType::Float64),
+            Field::new("solver".into(), DataType::String),
         ]),
     ))
 }
@@ -67,7 +68,12 @@ fn least_squares(inputs: &[Series], kwargs: LeastSquaresKwargs) -> PolarsResult<
 
     let weights = kwargs
         .weighted
-        .then(|| Weights::new(matrix.subcols(dense.n_cols() - 1, 1), &names[names.len() - 1]))
+        .then(|| {
+            Weights::new(
+                matrix.subcols(dense.n_cols() - 1, 1),
+                &names[names.len() - 1],
+            )
+        })
         .transpose()?;
     let options = least_squares::Options {
         intercept: kwargs.intercept,
@@ -83,7 +89,11 @@ fn least_squares(inputs: &[Series], kwargs: LeastSquaresKwargs) -> PolarsResult<
             result::matrix_rows("coefficients", fit.coefficients.transpose()),
             result::optional_float_list("intercept", fit.intercept.as_deref()),
             result::count("n_observations", fit.n_observations),
+            result::count("rank", fit.rank),
             result::float_list("residual_sum_of_squares", &fit.residual_sum_of_squares),
+            result::optional_float_list("singular_values", fit.singular_values.as_deref()),
+            result::number("condition", fit.condition),
+            result::text("solver", fit.solver.name()),
         ],
     )
 }

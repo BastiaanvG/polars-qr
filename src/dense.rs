@@ -217,7 +217,10 @@ mod tests {
     fn drops_unusable_rows_across_every_column() {
         let inputs = [
             Series::new("a".into(), [Some(1.0), None, Some(3.0), Some(4.0)]),
-            Series::new("b".into(), [Some(5.0), Some(6.0), Some(f64::NAN), Some(8.0)]),
+            Series::new(
+                "b".into(),
+                [Some(5.0), Some(6.0), Some(f64::NAN), Some(8.0)],
+            ),
         ];
         let dense = DenseFrame::from_series(&inputs, NullPolicy::Drop).unwrap();
 
