@@ -22,6 +22,7 @@ struct LeastSquaresKwargs {
     weighted: bool,
     intercept: bool,
     solver: Solver,
+    l2_penalty: f64,
     null_policy: NullPolicy,
 }
 
@@ -78,6 +79,7 @@ fn least_squares(inputs: &[Series], kwargs: LeastSquaresKwargs) -> PolarsResult<
     let options = least_squares::Options {
         intercept: kwargs.intercept,
         solver: kwargs.solver,
+        l2_penalty: kwargs.l2_penalty,
     };
     let fit = least_squares::fit(features, targets, weights.as_ref(), &options)?;
 

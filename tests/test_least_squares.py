@@ -305,3 +305,36 @@ def test_the_intercept_counts_towards_the_rank(frame):
 
     assert out["rank"][0] == len(FEATURES) + 1
     assert len(out["singular_values"][0].to_list()) == len(FEATURES) + 1
+
+
+def test_a_penalty_matches_an_augmented_solve(frame):
+    penalty = 5.0
+
+    out = frame.select(pf.least_squares("y", FEATURES, l2_penalty=penalty).alias("fit")).unnest(
+        "fit"
+    )
+
+    x = frame.select(FEATURES).to_numpy()
+    y = frame["y"].to_numpy()
+    augmented_x = np.vstack([x, np.sqrt(penalty) * np.eye(len(FEATURES))])
+    augmented_y = np.concatenate([y, np.zeros(len(FEATURES))])
+    expected = np.linalg.lstsq(augmented_x, augmented_y, rcond=None)[0]
+    assert np.allclose(out["coefficients"][0].to_list()[0], expected)
+
+
+def test_a_penalty_shrinks_every_coefficient(frame):
+    plain = frame.select(pf.least_squares("y", FEATURES).alias("fit")).unnest("fit")
+    ridge = frame.select(pf.least_squares("y", FEATURES, l2_penalty=1e4).alias("fit")).unnest("fit")
+
+    plain_norm = np.linalg.norm(plain["coefficients"][0].to_list()[0])
+    ridge_norm = np.linalg.norm(ridge["coefficients"][0].to_list()[0])
+    assert ridge_norm < plain_norm
+
+
+def test_a_zero_penalty_changes_nothing(frame):
+    without = frame.select(pf.least_squares("y", FEATURES).alias("fit")).unnest("fit")
+    with_zero = frame.select(pf.least_squares("y", FEATURES, l2_penalty=0.0).alias("fit")).unnest(
+        "fit"
+    )
+
+    assert without.equals(with_zero)

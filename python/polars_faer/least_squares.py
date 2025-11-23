@@ -13,6 +13,7 @@ def least_squares(
     weights: IntoExpr | None = None,
     intercept: bool = False,
     solver: Solver = "qr",
+    l2_penalty: float = 0.0,
     null_policy: NullPolicy = "raise",
 ) -> pl.Expr:
     """Fit `targets` against `features` in the least-squares sense.
@@ -35,6 +36,9 @@ def least_squares(
         `"qr"` for a QR factorisation, which is the faster route and needs the features to
         have full column rank, or `"svd"` for a thin SVD, which also solves rank-deficient
         and underdetermined systems and returns the solution of smallest norm.
+    l2_penalty
+        A ridge penalty on the coefficients. A constant term is never penalised, and the
+        reported residual sums of squares are those of the unpenalised system.
     null_policy
         `"raise"` to fail on a row that is null or not finite, `"drop"` to leave it out.
         Rows are read jointly, so a row is either used by every column or by none.
@@ -77,6 +81,7 @@ def least_squares(
             "weighted": weights is not None,
             "intercept": intercept,
             "solver": solver,
+            "l2_penalty": l2_penalty,
             "null_policy": null_policy,
         },
         returns_scalar=True,

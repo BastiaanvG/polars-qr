@@ -38,6 +38,8 @@ pub struct Options {
     pub intercept: bool,
     /// Which factorisation to solve with.
     pub solver: Solver,
+    /// The ridge penalty on the coefficients. A constant term is never penalised.
+    pub l2_penalty: f64,
 }
 
 /// The outcome of a least-squares solve.
@@ -97,13 +99,22 @@ pub fn fit(
         None => (design, targets.to_owned()),
     };
 
+    let (penalised, penalised_targets) = penalise(
+        design.as_ref(),
+        scaled_targets.as_ref(),
+        options.l2_penalty,
+        options.intercept,
+    );
+
     let (solution, diagnostics) = match options.solver {
         Solver::Qr => {
-            let qr = design.qr();
-            (qr.solve_lstsq(&scaled_targets), from_qr(qr.thin_R()))
+            let qr = penalised.qr();
+            (qr.solve_lstsq(&penalised_targets), from_qr(qr.thin_R()))
         }
-        Solver::Svd => solve_svd(design.as_ref(), scaled_targets.as_ref())?,
+        Solver::Svd => solve_svd(penalised.as_ref(), penalised_targets.as_ref())?,
     };
+    // The residual is reported for the system that was asked about, not for the padded one
+    // the penalty is expressed through.
     let residual_sum_of_squares =
         residual_sum_of_squares(design.as_ref(), scaled_targets.as_ref(), solution.as_ref());
 
@@ -120,6 +131,46 @@ pub fn fit(
         condition: diagnostics.condition,
         solver: options.solver,
     })
+}
+
+/// Express a ridge penalty as extra rows on the system.
+///
+/// Appending `sqrt(lambda) * I` under the design and zeros under the targets makes the
+/// ordinary least-squares solution of the padded system the ridge solution of the original
+/// one, which keeps both solvers unchanged. The row belonging to a constant term is left
+/// out, so the penalty never pulls the intercept towards zero.
+fn penalise(
+    design: MatRef<'_, f64>,
+    targets: MatRef<'_, f64>,
+    l2_penalty: f64,
+    intercept: bool,
+) -> (Mat<f64>, Mat<f64>) {
+    if l2_penalty <= 0.0 {
+        return (design.to_owned(), targets.to_owned());
+    }
+
+    let (n, columns) = (design.nrows(), design.ncols());
+    let first_penalised = usize::from(intercept);
+    let extra = columns - first_penalised;
+    let root = l2_penalty.sqrt();
+
+    let padded = Mat::from_fn(n + extra, columns, |i, j| {
+        if i < n {
+            design[(i, j)]
+        } else if j == i - n + first_penalised {
+            root
+        } else {
+            0.0
+        }
+    });
+    let padded_targets = Mat::from_fn(n + extra, targets.ncols(), |i, j| {
+        if i < n {
+            targets[(i, j)]
+        } else {
+            0.0
+        }
+    });
+    (padded, padded_targets)
 }
 
 /// What a factorisation says about the conditioning of the design matrix.
@@ -242,13 +293,21 @@ mod tests {
         Options {
             intercept: false,
             solver: Solver::Qr,
+            l2_penalty: 0.0,
         }
     }
 
     fn with_svd() -> Options {
         Options {
-            intercept: false,
             solver: Solver::Svd,
+            ..plain()
+        }
+    }
+
+    fn with_intercept() -> Options {
+        Options {
+            intercept: true,
+            ..plain()
         }
     }
 
@@ -285,16 +344,7 @@ mod tests {
         let x = matrix(&[&[0.0], &[1.0], &[2.0], &[3.0]]);
         let y = matrix(&[&[3.0], &[5.0], &[7.0], &[9.0]]);
 
-        let fit = fit(
-            x.as_ref(),
-            y.as_ref(),
-            None,
-            &Options {
-                intercept: true,
-                solver: Solver::Qr,
-            },
-        )
-        .unwrap();
+        let fit = fit(x.as_ref(), y.as_ref(), None, &with_intercept()).unwrap();
 
         let intercept = fit.intercept.unwrap();
         assert!((intercept[0] - 3.0).abs() < 1e-12);
@@ -310,16 +360,7 @@ mod tests {
         let w = matrix(&[&[1.0], &[1.0], &[1.0], &[0.0]]);
         let weights = Weights::new(w.as_ref(), "w").unwrap();
 
-        let fit = fit(
-            x.as_ref(),
-            y.as_ref(),
-            Some(&weights),
-            &Options {
-                intercept: true,
-                solver: Solver::Qr,
-            },
-        )
-        .unwrap();
+        let fit = fit(x.as_ref(), y.as_ref(), Some(&weights), &with_intercept()).unwrap();
 
         let intercept = fit.intercept.unwrap();
         assert!((intercept[0] - 3.0).abs() < 1e-12);
@@ -415,6 +456,101 @@ mod tests {
     }
 
     #[test]
+    fn a_penalty_shrinks_the_coefficients_towards_zero() {
+        let x = matrix(&[&[1.0], &[2.0], &[3.0]]);
+        let y = matrix(&[&[2.0], &[4.0], &[6.0]]);
+
+        let plain_fit = fit(x.as_ref(), y.as_ref(), None, &plain()).unwrap();
+        let ridge = fit(
+            x.as_ref(),
+            y.as_ref(),
+            None,
+            &Options {
+                l2_penalty: 14.0,
+                ..plain()
+            },
+        )
+        .unwrap();
+
+        // beta = x'y / (x'x + lambda) = 28 / (14 + 14).
+        assert!((plain_fit.coefficients[(0, 0)] - 2.0).abs() < 1e-12);
+        assert!((ridge.coefficients[(0, 0)] - 1.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn a_penalty_leaves_the_constant_term_alone() {
+        // A feature that is always zero cannot explain anything, so the constant term has
+        // to carry the mean whatever the penalty is.
+        let x = matrix(&[&[0.0], &[0.0], &[0.0]]);
+        let y = matrix(&[&[4.0], &[4.0], &[4.0]]);
+
+        let ridge = fit(
+            x.as_ref(),
+            y.as_ref(),
+            None,
+            &Options {
+                l2_penalty: 100.0,
+                ..with_intercept()
+            },
+        )
+        .unwrap();
+
+        assert!((ridge.intercept.unwrap()[0] - 4.0).abs() < 1e-12);
+        assert!(ridge.coefficients[(0, 0)].abs() < 1e-12);
+    }
+
+    #[test]
+    fn the_residual_ignores_the_rows_the_penalty_adds() {
+        let x = matrix(&[&[1.0], &[2.0], &[3.0]]);
+        let y = matrix(&[&[2.0], &[4.0], &[6.0]]);
+
+        let ridge = fit(
+            x.as_ref(),
+            y.as_ref(),
+            None,
+            &Options {
+                l2_penalty: 14.0,
+                ..plain()
+            },
+        )
+        .unwrap();
+
+        // With beta = 1 the residuals are 1, 2 and 3.
+        assert!((ridge.residual_sum_of_squares[0] - 14.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn both_solvers_agree_under_a_penalty() {
+        let x = matrix(&[&[1.0, 0.5], &[2.0, -1.0], &[3.0, 0.25]]);
+        let y = matrix(&[&[2.0], &[4.0], &[6.0]]);
+
+        let by_qr = fit(
+            x.as_ref(),
+            y.as_ref(),
+            None,
+            &Options {
+                l2_penalty: 3.0,
+                ..plain()
+            },
+        )
+        .unwrap();
+        let by_svd = fit(
+            x.as_ref(),
+            y.as_ref(),
+            None,
+            &Options {
+                l2_penalty: 3.0,
+                ..with_svd()
+            },
+        )
+        .unwrap();
+
+        for i in 0..2 {
+            assert!((by_qr.coefficients[(i, 0)] - by_svd.coefficients[(i, 0)]).abs() < 1e-10);
+        }
+    }
+
+    #[test]
     fn rejects_a_system_with_fewer_observations_than_columns() {
         let x = matrix(&[&[1.0, 2.0]]);
         let y = matrix(&[&[1.0]]);
@@ -428,16 +564,7 @@ mod tests {
         let y = matrix(&[&[1.0], &[2.0]]);
 
         assert!(fit(x.as_ref(), y.as_ref(), None, &plain()).is_ok());
-        assert!(fit(
-            x.as_ref(),
-            y.as_ref(),
-            None,
-            &Options {
-                intercept: true,
-                solver: Solver::Qr
-            }
-        )
-        .is_ok());
+        assert!(fit(x.as_ref(), y.as_ref(), None, &with_intercept()).is_ok());
 
         let one_row = matrix(&[&[1.0]]);
         let one_target = matrix(&[&[1.0]]);
@@ -446,10 +573,7 @@ mod tests {
             one_row.as_ref(),
             one_target.as_ref(),
             None,
-            &Options {
-                intercept: true,
-                solver: Solver::Qr
-            }
+            &with_intercept()
         )
         .is_err());
     }
