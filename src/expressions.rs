@@ -4,6 +4,7 @@ use polars::prelude::*;
 use pyo3_polars::derive::polars_expr;
 use serde::Deserialize;
 
+use crate::covariance;
 use crate::dense::{column_names, DenseFrame, NullPolicy};
 use crate::least_squares::{self, Solver};
 use crate::result;
@@ -96,6 +97,47 @@ fn least_squares(inputs: &[Series], kwargs: LeastSquaresKwargs) -> PolarsResult<
             result::optional_float_list("singular_values", fit.singular_values.as_deref()),
             result::number("condition", fit.condition),
             result::text("solver", fit.solver.name()),
+        ],
+    )
+}
+
+#[derive(Deserialize)]
+struct CovarianceKwargs {
+    ddof: f64,
+    null_policy: NullPolicy,
+}
+
+fn covariance_dtype(_: &[Field]) -> PolarsResult<Field> {
+    Ok(Field::new(
+        "covariance".into(),
+        DataType::Struct(vec![
+            Field::new("features".into(), result::string_list_dtype()),
+            Field::new("means".into(), result::float_list_dtype()),
+            Field::new("standard_deviations".into(), result::float_list_dtype()),
+            Field::new("covariance".into(), result::matrix_dtype()),
+            Field::new("n_observations".into(), DataType::UInt32),
+            Field::new("size".into(), DataType::UInt32),
+        ]),
+    ))
+}
+
+/// Estimate the covariance of the input columns.
+#[polars_expr(output_type_func=covariance_dtype)]
+fn covariance(inputs: &[Series], kwargs: CovarianceKwargs) -> PolarsResult<Series> {
+    let dense = DenseFrame::from_series(inputs, kwargs.null_policy)?;
+    let options = covariance::Options { ddof: kwargs.ddof };
+    let estimate = covariance::covariance(dense.matrix(), &options)?;
+    let names = column_names(inputs);
+
+    result::struct_row(
+        "covariance",
+        &[
+            result::string_list("features", &names),
+            result::float_list("means", &estimate.means),
+            result::float_list("standard_deviations", &estimate.standard_deviations),
+            result::matrix_rows("covariance", estimate.values.as_ref()),
+            result::count("n_observations", estimate.n_observations),
+            result::count("size", dense.n_cols()),
         ],
     )
 }
