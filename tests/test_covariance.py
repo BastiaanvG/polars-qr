@@ -71,3 +71,50 @@ def test_too_few_observations_for_the_degrees_of_freedom_is_rejected(frame):
 
     with pytest.raises(pl.exceptions.ComputeError, match="nothing to divide by"):
         single.select(pf.covariance(FEATURES))
+
+
+def test_correlation_matches_a_reference_estimate(frame):
+    out = frame.select(pf.correlation(FEATURES).alias("corr")).unnest("corr")
+
+    x = frame.select(FEATURES).to_numpy()
+    assert out["features"][0].to_list() == FEATURES
+    assert np.allclose(out["correlation"][0].to_list(), np.corrcoef(x, rowvar=False))
+    assert out["size"][0] == len(FEATURES)
+
+
+def test_correlation_has_an_exact_unit_diagonal(frame):
+    out = frame.select(pf.correlation(FEATURES).alias("corr")).unnest("corr")
+
+    values = np.array(out["correlation"][0].to_list())
+    assert np.array_equal(np.diag(values), np.ones(len(FEATURES)))
+
+
+def test_correlation_is_unchanged_by_rescaling_a_column(frame):
+    plain = frame.select(pf.correlation(FEATURES).alias("corr")).unnest("corr")
+    rescaled = (
+        frame.with_columns((pl.col("a") * 1000.0 + 5.0).alias("a"))
+        .select(pf.correlation(FEATURES).alias("corr"))
+        .unnest("corr")
+    )
+
+    assert np.allclose(plain["correlation"][0].to_list(), rescaled["correlation"][0].to_list())
+
+
+def test_correlation_reports_the_same_moments_as_covariance(frame):
+    cov = frame.select(pf.covariance(FEATURES).alias("cov")).unnest("cov")
+    corr = frame.select(pf.correlation(FEATURES).alias("corr")).unnest("corr")
+
+    assert np.allclose(cov["means"][0].to_list(), corr["means"][0].to_list())
+    assert np.allclose(
+        cov["standard_deviations"][0].to_list(), corr["standard_deviations"][0].to_list()
+    )
+
+
+def test_a_column_that_does_not_vary_correlates_with_nothing(frame):
+    flat = frame.with_columns(pl.lit(3.0).alias("flat"))
+
+    out = flat.select(pf.correlation([*FEATURES, "flat"]).alias("corr")).unnest("corr")
+
+    values = np.array(out["correlation"][0].to_list())
+    assert np.isnan(values[-1]).all()
+    assert not np.isnan(values[:-1, :-1]).any()

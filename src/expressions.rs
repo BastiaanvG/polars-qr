@@ -104,40 +104,69 @@ fn least_squares(inputs: &[Series], kwargs: LeastSquaresKwargs) -> PolarsResult<
 #[derive(Deserialize)]
 struct CovarianceKwargs {
     ddof: f64,
+    normalise: bool,
     null_policy: NullPolicy,
 }
 
-fn covariance_dtype(_: &[Field]) -> PolarsResult<Field> {
+/// The result schema of both second-moment operations, which differ only in what the
+/// matrix field is called.
+fn second_moment_dtype(name: &str) -> PolarsResult<Field> {
     Ok(Field::new(
-        "covariance".into(),
+        name.into(),
         DataType::Struct(vec![
             Field::new("features".into(), result::string_list_dtype()),
             Field::new("means".into(), result::float_list_dtype()),
             Field::new("standard_deviations".into(), result::float_list_dtype()),
-            Field::new("covariance".into(), result::matrix_dtype()),
+            Field::new(name.into(), result::matrix_dtype()),
             Field::new("n_observations".into(), DataType::UInt32),
             Field::new("size".into(), DataType::UInt32),
         ]),
     ))
 }
 
-/// Estimate the covariance of the input columns.
-#[polars_expr(output_type_func=covariance_dtype)]
-fn covariance(inputs: &[Series], kwargs: CovarianceKwargs) -> PolarsResult<Series> {
+fn covariance_dtype(_: &[Field]) -> PolarsResult<Field> {
+    second_moment_dtype("covariance")
+}
+
+fn correlation_dtype(_: &[Field]) -> PolarsResult<Field> {
+    second_moment_dtype("correlation")
+}
+
+/// Estimate the second moments of the input columns and label the result.
+fn second_moments(
+    inputs: &[Series],
+    kwargs: &CovarianceKwargs,
+    name: &str,
+) -> PolarsResult<Series> {
     let dense = DenseFrame::from_series(inputs, kwargs.null_policy)?;
-    let options = covariance::Options { ddof: kwargs.ddof };
+    let options = covariance::Options {
+        ddof: kwargs.ddof,
+        normalise: kwargs.normalise,
+    };
     let estimate = covariance::covariance(dense.matrix(), &options)?;
     let names = column_names(inputs);
 
     result::struct_row(
-        "covariance",
+        name,
         &[
             result::string_list("features", &names),
             result::float_list("means", &estimate.means),
             result::float_list("standard_deviations", &estimate.standard_deviations),
-            result::matrix_rows("covariance", estimate.values.as_ref()),
+            result::matrix_rows(name, estimate.values.as_ref()),
             result::count("n_observations", estimate.n_observations),
             result::count("size", dense.n_cols()),
         ],
     )
+}
+
+/// Estimate the covariance of the input columns.
+#[polars_expr(output_type_func=covariance_dtype)]
+fn covariance(inputs: &[Series], kwargs: CovarianceKwargs) -> PolarsResult<Series> {
+    second_moments(inputs, &kwargs, "covariance")
+}
+
+/// Estimate the correlation of the input columns.
+#[polars_expr(output_type_func=correlation_dtype)]
+fn correlation(inputs: &[Series], kwargs: CovarianceKwargs) -> PolarsResult<Series> {
+    second_moments(inputs, &kwargs, "correlation")
 }
