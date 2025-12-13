@@ -118,3 +118,49 @@ def test_a_column_that_does_not_vary_correlates_with_nothing(frame):
     values = np.array(out["correlation"][0].to_list())
     assert np.isnan(values[-1]).all()
     assert not np.isnan(values[:-1, :-1]).any()
+
+
+def test_weighted_covariance_matches_a_reference_estimate(frame):
+    out = frame.select(pf.covariance(FEATURES, weights="weight").alias("cov")).unnest("cov")
+
+    x = frame.select(FEATURES).to_numpy()
+    w = frame["weight"].to_numpy()
+    assert np.allclose(out["covariance"][0].to_list(), np.cov(x, rowvar=False, aweights=w, ddof=1))
+    assert np.allclose(out["means"][0].to_list(), np.average(x, axis=0, weights=w))
+    assert np.isclose(out["sum_weights"][0], w.sum())
+
+
+def test_weighted_correlation_matches_a_reference_estimate(frame):
+    out = frame.select(pf.correlation(FEATURES, weights="weight").alias("corr")).unnest("corr")
+
+    x = frame.select(FEATURES).to_numpy()
+    w = frame["weight"].to_numpy()
+    cov = np.cov(x, rowvar=False, aweights=w, ddof=1)
+    scale = np.sqrt(np.diag(cov))
+    assert np.allclose(out["correlation"][0].to_list(), cov / np.outer(scale, scale))
+
+
+def test_the_sum_of_weights_is_the_row_count_without_weights(frame):
+    out = frame.select(pf.covariance(FEATURES).alias("cov")).unnest("cov")
+
+    assert out["sum_weights"][0] == frame.height
+
+
+def test_scaling_every_weight_leaves_the_estimate_alone(frame):
+    one = frame.select(pf.covariance(FEATURES, weights="weight").alias("cov")).unnest("cov")
+    other = (
+        frame.with_columns((pl.col("weight") * 1000.0).alias("weight"))
+        .select(pf.covariance(FEATURES, weights="weight").alias("cov"))
+        .unnest("cov")
+    )
+
+    assert np.allclose(one["covariance"][0].to_list(), other["covariance"][0].to_list())
+
+
+def test_a_negative_weight_is_rejected_by_covariance(frame):
+    negative = frame.with_columns(
+        pl.when(pl.arange(0, frame.height) == 1).then(-1.0).otherwise(1.0).alias("w")
+    )
+
+    with pytest.raises(pl.exceptions.ComputeError, match="negative weight"):
+        negative.select(pf.covariance(FEATURES, weights="w"))

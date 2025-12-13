@@ -1,7 +1,7 @@
 import polars as pl
 
 from polars_faer._plugin import plugin_expr
-from polars_faer._typing import IntoExprColumns, NullPolicy, as_expressions
+from polars_faer._typing import IntoExpr, IntoExprColumns, NullPolicy, as_expressions
 
 __all__ = ["correlation", "covariance"]
 
@@ -9,6 +9,7 @@ __all__ = ["correlation", "covariance"]
 def covariance(
     features: IntoExprColumns,
     *,
+    weights: IntoExpr | None = None,
     ddof: float = 1.0,
     null_policy: NullPolicy = "raise",
 ) -> pl.Expr:
@@ -18,9 +19,14 @@ def covariance(
     ----------
     features
         The columns to estimate over. Their order is the order of both axes of the matrix.
+    weights
+        An optional column of observation weights, which must be finite and non-negative.
+        They are read as reliability weights: scaling all of them by the same factor leaves
+        the estimate unchanged, and the divisor is corrected accordingly.
     ddof
         The delta degrees of freedom: the divisor is the number of observations minus this.
-        The default of 1 gives the usual sample covariance.
+        The default of 1 gives the usual sample covariance. Under weights the divisor is
+        the sum of the weights minus `ddof` times the sum of their squares over their sum.
     null_policy
         `"raise"` to fail on a row that is null or not finite, `"drop"` to leave it out.
         Rows are dropped jointly, so every entry of the matrix is estimated from the same
@@ -40,14 +46,22 @@ def covariance(
         The matrix, as a list of its rows.
     `n_observations`
         The number of rows the estimate used.
+    `sum_weights`
+        The sum of the weights, which is the observation count when there are none.
     `size`
         The number of features, which is the size of both axes.
     """
     columns = as_expressions(features)
+    weight_columns = [] if weights is None else as_expressions(weights)
     return plugin_expr(
         "covariance",
-        columns,
-        {"ddof": ddof, "normalise": False, "null_policy": null_policy},
+        [*columns, *weight_columns],
+        {
+            "ddof": ddof,
+            "weighted": weights is not None,
+            "normalise": False,
+            "null_policy": null_policy,
+        },
         returns_scalar=True,
     )
 
@@ -55,6 +69,7 @@ def covariance(
 def correlation(
     features: IntoExprColumns,
     *,
+    weights: IntoExpr | None = None,
     ddof: float = 1.0,
     null_policy: NullPolicy = "raise",
 ) -> pl.Expr:
@@ -67,6 +82,8 @@ def correlation(
     ----------
     features
         The columns to estimate over. Their order is the order of both axes of the matrix.
+    weights
+        An optional column of observation weights, read the same way as in :func:`covariance`.
     ddof
         The delta degrees of freedom used for the underlying covariance. It cancels out of
         the correlations themselves, but it is still what the reported standard deviations
@@ -84,9 +101,15 @@ def correlation(
     column come back as NaN.
     """
     columns = as_expressions(features)
+    weight_columns = [] if weights is None else as_expressions(weights)
     return plugin_expr(
         "correlation",
-        columns,
-        {"ddof": ddof, "normalise": True, "null_policy": null_policy},
+        [*columns, *weight_columns],
+        {
+            "ddof": ddof,
+            "weighted": weights is not None,
+            "normalise": True,
+            "null_policy": null_policy,
+        },
         returns_scalar=True,
     )

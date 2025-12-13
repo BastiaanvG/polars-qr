@@ -104,6 +104,7 @@ fn least_squares(inputs: &[Series], kwargs: LeastSquaresKwargs) -> PolarsResult<
 #[derive(Deserialize)]
 struct CovarianceKwargs {
     ddof: f64,
+    weighted: bool,
     normalise: bool,
     null_policy: NullPolicy,
 }
@@ -119,6 +120,7 @@ fn second_moment_dtype(name: &str) -> PolarsResult<Field> {
             Field::new("standard_deviations".into(), result::float_list_dtype()),
             Field::new(name.into(), result::matrix_dtype()),
             Field::new("n_observations".into(), DataType::UInt32),
+            Field::new("sum_weights".into(), DataType::Float64),
             Field::new("size".into(), DataType::UInt32),
         ]),
     ))
@@ -139,22 +141,34 @@ fn second_moments(
     name: &str,
 ) -> PolarsResult<Series> {
     let dense = DenseFrame::from_series(inputs, kwargs.null_policy)?;
+    let names = column_names(inputs);
+    let matrix = dense.matrix();
+    let n_features = dense.n_cols() - usize::from(kwargs.weighted);
+    if n_features == 0 {
+        polars_bail!(InvalidOperation: "at least one feature is required");
+    }
+
+    let weights = kwargs
+        .weighted
+        .then(|| Weights::new(matrix.subcols(n_features, 1), &names[n_features]))
+        .transpose()?;
     let options = covariance::Options {
         ddof: kwargs.ddof,
         normalise: kwargs.normalise,
     };
-    let estimate = covariance::covariance(dense.matrix(), &options)?;
-    let names = column_names(inputs);
+    let estimate =
+        covariance::covariance(matrix.subcols(0, n_features), weights.as_ref(), &options)?;
 
     result::struct_row(
         name,
         &[
-            result::string_list("features", &names),
+            result::string_list("features", &names[..n_features]),
             result::float_list("means", &estimate.means),
             result::float_list("standard_deviations", &estimate.standard_deviations),
             result::matrix_rows(name, estimate.values.as_ref()),
             result::count("n_observations", estimate.n_observations),
-            result::count("size", dense.n_cols()),
+            result::number("sum_weights", estimate.sum_weights),
+            result::count("size", n_features),
         ],
     )
 }
