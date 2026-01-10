@@ -7,5 +7,6 @@ mod covariance;
 mod dense;
 mod expressions;
 mod least_squares;
+mod pca;
 mod result;
 mod weights;

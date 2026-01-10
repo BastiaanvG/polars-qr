@@ -4,10 +4,11 @@ from importlib.metadata import PackageNotFoundError, version
 
 from polars_faer.covariance import correlation, covariance
 from polars_faer.least_squares import least_squares
+from polars_faer.pca import pca
 
 try:
     __version__ = version("polars-faer")
 except PackageNotFoundError:  # pragma: no cover - only hit in a source tree
     __version__ = "0.0.0"
 
-__all__ = ["__version__", "correlation", "covariance", "least_squares"]
+__all__ = ["__version__", "correlation", "covariance", "least_squares", "pca"]

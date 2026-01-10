@@ -7,6 +7,7 @@ use serde::Deserialize;
 use crate::covariance;
 use crate::dense::{column_names, DenseFrame, NullPolicy};
 use crate::least_squares::{self, Solver};
+use crate::pca;
 use crate::result;
 use crate::weights::Weights;
 
@@ -183,4 +184,53 @@ fn covariance(inputs: &[Series], kwargs: CovarianceKwargs) -> PolarsResult<Serie
 #[polars_expr(output_type_func=correlation_dtype)]
 fn correlation(inputs: &[Series], kwargs: CovarianceKwargs) -> PolarsResult<Series> {
     second_moments(inputs, &kwargs, "correlation")
+}
+
+#[derive(Deserialize)]
+struct PcaKwargs {
+    n_components: Option<usize>,
+    centre: bool,
+    scale: bool,
+    null_policy: NullPolicy,
+}
+
+fn pca_dtype(_: &[Field]) -> PolarsResult<Field> {
+    Ok(Field::new(
+        "pca".into(),
+        DataType::Struct(vec![
+            Field::new("features".into(), result::string_list_dtype()),
+            Field::new("means".into(), result::float_list_dtype()),
+            Field::new("scales".into(), result::float_list_dtype()),
+            Field::new("components".into(), result::matrix_dtype()),
+            Field::new("singular_values".into(), result::float_list_dtype()),
+            Field::new("rank".into(), DataType::UInt32),
+            Field::new("n_observations".into(), DataType::UInt32),
+        ]),
+    ))
+}
+
+/// Find the principal components of the input columns.
+#[polars_expr(output_type_func=pca_dtype)]
+fn pca(inputs: &[Series], kwargs: PcaKwargs) -> PolarsResult<Series> {
+    let dense = DenseFrame::from_series(inputs, kwargs.null_policy)?;
+    let options = pca::Options {
+        n_components: kwargs.n_components,
+        centre: kwargs.centre,
+        scale: kwargs.scale,
+    };
+    let found = pca::pca(dense.matrix(), &options)?;
+    let names = column_names(inputs);
+
+    result::struct_row(
+        "pca",
+        &[
+            result::string_list("features", &names),
+            result::float_list("means", &found.means),
+            result::float_list("scales", &found.scales),
+            result::matrix_rows("components", found.components.as_ref()),
+            result::float_list("singular_values", &found.singular_values),
+            result::count("rank", found.rank),
+            result::count("n_observations", found.n_observations),
+        ],
+    )
 }
