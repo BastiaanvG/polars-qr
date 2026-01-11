@@ -43,7 +43,9 @@ def pca(
     `scales`
         The scales the columns were divided by, or ones when `scale` is false.
     `components`
-        The loadings, as a list of components; each one is a list over `features`.
+        The loadings, as a list of components; each one is a list over `features`. The sign
+        of a component is fixed so that its largest entry is positive, which keeps two runs
+        over the same data comparable.
     `singular_values`
         The singular values of the centred and scaled matrix, one per component.
     `rank`

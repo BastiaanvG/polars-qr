@@ -77,3 +77,22 @@ def test_each_group_is_decomposed_on_its_own_rows(frame):
 def test_more_components_than_the_data_supports_is_rejected(frame):
     with pytest.raises(pl.exceptions.ComputeError, match="support at most"):
         frame.select(pf.pca(FEATURES, n_components=4))
+
+
+def test_the_component_signs_do_not_depend_on_the_data_sign(frame):
+    plain = frame.select(pf.pca(FEATURES).alias("pca")).unnest("pca")
+    negated = (
+        frame.with_columns([(-pl.col(name)).alias(name) for name in FEATURES])
+        .select(pf.pca(FEATURES).alias("pca"))
+        .unnest("pca")
+    )
+
+    assert np.allclose(plain["components"][0].to_list(), negated["components"][0].to_list())
+
+
+def test_every_component_leads_with_a_positive_entry(frame):
+    out = frame.select(pf.pca(FEATURES).alias("pca")).unnest("pca")
+
+    components = np.array(out["components"][0].to_list())
+    leading = np.take_along_axis(components, np.abs(components).argmax(axis=1)[:, None], axis=1)
+    assert (leading > 0).all()

@@ -67,7 +67,8 @@ pub fn pca(x: MatRef<'_, f64>, options: &Options) -> PolarsResult<Pca> {
 
     // The right singular vectors are the loadings; one component per row reads the same
     // way round as the rest of the results in this crate.
-    let components = svd.V().subcols(0, n_components).transpose().to_owned();
+    let mut components = svd.V().subcols(0, n_components).transpose().to_owned();
+    fix_signs(&mut components);
 
     Ok(Pca {
         means,
@@ -77,6 +78,32 @@ pub fn pca(x: MatRef<'_, f64>, options: &Options) -> PolarsResult<Pca> {
         rank,
         n_observations: n,
     })
+}
+
+/// Give every component a sign that does not depend on the factorisation.
+///
+/// A singular vector and its negation describe the same direction, and which one comes out
+/// of a decomposition is an implementation detail that can differ between machines, library
+/// versions or even runs. Flipping each component so that its largest entry is positive
+/// pins that down, which is what makes two runs over the same data comparable. The first
+/// largest entry wins when two are equally large.
+fn fix_signs(components: &mut Mat<f64>) {
+    for i in 0..components.nrows() {
+        let mut largest = 0.0;
+        let mut sign = 1.0;
+        for j in 0..components.ncols() {
+            let value = components[(i, j)];
+            if value.abs() > largest {
+                largest = value.abs();
+                sign = if value < 0.0 { -1.0 } else { 1.0 };
+            }
+        }
+        if sign < 0.0 {
+            for j in 0..components.ncols() {
+                components[(i, j)] = -components[(i, j)];
+            }
+        }
+    }
 }
 
 /// Centre and scale the columns, reporting what was applied.
@@ -164,6 +191,46 @@ mod tests {
                     .map(|j| result.components[(i, j)] * result.components[(other, j)])
                     .sum();
                 assert!(dot.abs() < 1e-12);
+            }
+        }
+    }
+
+    #[test]
+    fn every_component_leads_with_a_positive_entry() {
+        let x = matrix(&[
+            &[1.0, 0.5, -1.0],
+            &[2.0, -1.0, 0.0],
+            &[3.0, 2.0, 1.0],
+            &[-1.0, 0.0, 2.0],
+        ]);
+
+        let result = pca(x.as_ref(), &centred()).unwrap();
+
+        for i in 0..result.components.nrows() {
+            let largest = (0..3)
+                .max_by(|a, b| {
+                    result.components[(i, *a)]
+                        .abs()
+                        .total_cmp(&result.components[(i, *b)].abs())
+                })
+                .unwrap();
+            assert!(result.components[(i, largest)] > 0.0);
+        }
+    }
+
+    #[test]
+    fn negating_the_data_leaves_the_components_alone() {
+        // Negating every observation negates the singular vectors, so a decomposition that
+        // did not pin the signs down would return the components flipped.
+        let x = matrix(&[&[1.0, 0.5], &[2.0, -1.0], &[3.0, 2.0], &[-1.0, 0.0]]);
+        let negated = Mat::from_fn(4, 2, |i, j| -x[(i, j)]);
+
+        let one = pca(x.as_ref(), &centred()).unwrap();
+        let other = pca(negated.as_ref(), &centred()).unwrap();
+
+        for i in 0..2 {
+            for j in 0..2 {
+                assert!((one.components[(i, j)] - other.components[(i, j)]).abs() < 1e-12);
             }
         }
     }
