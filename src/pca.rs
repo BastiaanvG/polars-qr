@@ -25,6 +25,10 @@ pub struct Pca {
     pub components: Mat<f64>,
     /// The singular values of the transformed matrix, one per retained component.
     pub singular_values: Vec<f64>,
+    /// The variance along each retained component.
+    pub explained_variance: Vec<f64>,
+    /// The share of the total variance each retained component carries.
+    pub explained_variance_ratio: Vec<f64>,
     /// The numerical rank of the transformed matrix.
     pub rank: usize,
     /// The number of observations the components were found from.
@@ -70,11 +74,29 @@ pub fn pca(x: MatRef<'_, f64>, options: &Options) -> PolarsResult<Pca> {
     let mut components = svd.V().subcols(0, n_components).transpose().to_owned();
     fix_signs(&mut components);
 
+    // A component carries the variance of the data projected onto it, which is its
+    // singular value squared over the same degrees of freedom the covariance uses. The
+    // ratio is taken against every direction the data spans, not only the retained ones,
+    // so dropping components does not inflate the shares of the ones that are kept.
+    let degrees_of_freedom = n as f64 - 1.0;
+    let variances: Vec<f64> = all_values
+        .iter()
+        .map(|value| value * value / degrees_of_freedom)
+        .collect();
+    let total: f64 = variances.iter().sum();
+    let explained_variance = variances[..n_components].to_vec();
+    let explained_variance_ratio = explained_variance
+        .iter()
+        .map(|variance| if total > 0.0 { variance / total } else { 0.0 })
+        .collect();
+
     Ok(Pca {
         means,
         scales,
         components,
         singular_values: all_values[..n_components].to_vec(),
+        explained_variance,
+        explained_variance_ratio,
         rank,
         n_observations: n,
     })
@@ -265,6 +287,72 @@ mod tests {
         assert!(unscaled.components[(0, 1)].abs() > 0.99);
         assert!(scaled.components[(0, 0)].abs() > 0.1);
         assert!((scaled.scales[1] - 115.470053837925).abs() < 1e-9);
+    }
+
+    #[test]
+    fn the_explained_variance_adds_up_to_the_total_variance() {
+        let x = matrix(&[
+            &[1.0, 0.5, -1.0],
+            &[2.0, -1.0, 0.0],
+            &[3.0, 2.0, 1.0],
+            &[-1.0, 0.0, 2.0],
+        ]);
+
+        let result = pca(x.as_ref(), &centred()).unwrap();
+
+        // The total variance of the components is the total variance of the columns.
+        let column_variance: f64 = (0..3)
+            .map(|j| {
+                let mean = (0..4).map(|i| x[(i, j)]).sum::<f64>() / 4.0;
+                (0..4).map(|i| (x[(i, j)] - mean).powi(2)).sum::<f64>() / 3.0
+            })
+            .sum();
+        let explained: f64 = result.explained_variance.iter().sum();
+        let ratios: f64 = result.explained_variance_ratio.iter().sum();
+
+        assert!((explained - column_variance).abs() < 1e-12);
+        assert!((ratios - 1.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn the_ratios_are_taken_against_every_direction_not_only_the_kept_ones() {
+        let x = matrix(&[
+            &[1.0, 0.5, -1.0],
+            &[2.0, -1.0, 0.0],
+            &[3.0, 2.0, 1.0],
+            &[-1.0, 0.0, 2.0],
+        ]);
+
+        let all = pca(x.as_ref(), &centred()).unwrap();
+        let first = pca(
+            x.as_ref(),
+            &Options {
+                n_components: Some(1),
+                ..centred()
+            },
+        )
+        .unwrap();
+
+        assert!(
+            (all.explained_variance_ratio[0] - first.explained_variance_ratio[0]).abs() < 1e-12
+        );
+        assert!(first.explained_variance_ratio[0] < 1.0);
+    }
+
+    #[test]
+    fn the_variance_decreases_from_one_component_to_the_next() {
+        let x = matrix(&[
+            &[1.0, 0.5, -1.0],
+            &[2.0, -1.0, 0.0],
+            &[3.0, 2.0, 1.0],
+            &[-1.0, 0.0, 2.0],
+        ]);
+
+        let result = pca(x.as_ref(), &centred()).unwrap();
+
+        for pair in result.explained_variance.windows(2) {
+            assert!(pair[0] >= pair[1]);
+        }
     }
 
     #[test]

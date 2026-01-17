@@ -48,6 +48,12 @@ def pca(
         over the same data comparable.
     `singular_values`
         The singular values of the centred and scaled matrix, one per component.
+    `explained_variance`
+        The variance along each component: its singular value squared, over one degree of
+        freedom less than the number of observations.
+    `explained_variance_ratio`
+        The share of the total variance each component carries. The total counts every
+        direction the data spans, so keeping fewer components does not inflate the shares.
     `rank`
         The numerical rank of that matrix.
     `n_observations`

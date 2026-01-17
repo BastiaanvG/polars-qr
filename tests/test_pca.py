@@ -96,3 +96,31 @@ def test_every_component_leads_with_a_positive_entry(frame):
     components = np.array(out["components"][0].to_list())
     leading = np.take_along_axis(components, np.abs(components).argmax(axis=1)[:, None], axis=1)
     assert (leading > 0).all()
+
+
+def test_the_explained_variance_matches_the_column_variance(frame):
+    out = frame.select(pf.pca(FEATURES).alias("pca")).unnest("pca")
+
+    x = frame.select(FEATURES).to_numpy()
+    variance = np.array(out["explained_variance"][0].to_list())
+    assert np.isclose(variance.sum(), x.var(axis=0, ddof=1).sum())
+    assert np.allclose(out["explained_variance_ratio"][0].to_list(), variance / variance.sum())
+    assert np.isclose(sum(out["explained_variance_ratio"][0].to_list()), 1.0)
+
+
+def test_keeping_fewer_components_does_not_inflate_the_ratios(frame):
+    everything = frame.select(pf.pca(FEATURES).alias("pca")).unnest("pca")
+    first = frame.select(pf.pca(FEATURES, n_components=1).alias("pca")).unnest("pca")
+
+    assert np.isclose(
+        everything["explained_variance_ratio"][0].to_list()[0],
+        first["explained_variance_ratio"][0].to_list()[0],
+    )
+    assert sum(first["explained_variance_ratio"][0].to_list()) < 1.0
+
+
+def test_the_variance_decreases_from_one_component_to_the_next(frame):
+    out = frame.select(pf.pca(FEATURES).alias("pca")).unnest("pca")
+
+    variance = out["explained_variance"][0].to_list()
+    assert variance == sorted(variance, reverse=True)
