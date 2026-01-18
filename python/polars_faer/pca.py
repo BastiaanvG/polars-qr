@@ -3,7 +3,7 @@ import polars as pl
 from polars_faer._plugin import plugin_expr
 from polars_faer._typing import IntoExprColumns, NullPolicy, as_expressions
 
-__all__ = ["pca"]
+__all__ = ["pca", "pca_transform"]
 
 
 def pca(
@@ -70,4 +70,50 @@ def pca(
             "null_policy": null_policy,
         },
         returns_scalar=True,
+    )
+
+
+def pca_transform(
+    features: IntoExprColumns,
+    *,
+    n_components: int,
+    centre: bool = True,
+    scale: bool = False,
+    null_policy: NullPolicy = "raise",
+) -> pl.Expr:
+    """Score every row on the components found from the rows it is read with.
+
+    The expression keeps its rows, so it can sit next to the input in the same frame. Use
+    `.over(...)` to score each group on its own components.
+
+    Parameters
+    ----------
+    features
+        The columns to decompose and project.
+    n_components
+        How many components to score on. It is required here, unlike in :func:`pca`,
+        because it fixes the number of output columns.
+    centre
+        Whether to subtract the column means before decomposing.
+    scale
+        Whether to divide the columns through by their standard deviations first.
+    null_policy
+        `"raise"` to fail on a row that is null or not finite, `"drop"` to leave it out of
+        the decomposition. A dropped row still appears in the result, scoring null.
+
+    Returns
+    -------
+    An expression producing a struct with one `component_i` field per component, aligned
+    with the rows it was given.
+    """
+    columns = as_expressions(features)
+    return plugin_expr(
+        "pca_transform",
+        columns,
+        {
+            "n_components": n_components,
+            "centre": centre,
+            "scale": scale,
+            "null_policy": null_policy,
+        },
     )

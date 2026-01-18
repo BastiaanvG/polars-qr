@@ -241,3 +241,55 @@ fn pca(inputs: &[Series], kwargs: PcaKwargs) -> PolarsResult<Series> {
         ],
     )
 }
+
+#[derive(Deserialize)]
+struct PcaTransformKwargs {
+    n_components: usize,
+    centre: bool,
+    scale: bool,
+    null_policy: NullPolicy,
+}
+
+/// The names of the score columns, which are fixed by the number of components asked for.
+fn component_names(n_components: usize) -> Vec<String> {
+    (1..=n_components)
+        .map(|index| format!("component_{index}"))
+        .collect()
+}
+
+fn pca_transform_dtype(_: &[Field], kwargs: PcaTransformKwargs) -> PolarsResult<Field> {
+    let fields = component_names(kwargs.n_components)
+        .into_iter()
+        .map(|name| Field::new(name.into(), DataType::Float64))
+        .collect();
+    Ok(Field::new("pca_transform".into(), DataType::Struct(fields)))
+}
+
+/// Score every row on the components found from the rows it was read with.
+///
+/// The result has one row for every row that was given, so it can sit next to the input in
+/// the same frame. Rows the null policy dropped score as null.
+#[polars_expr(output_type_func_with_kwargs=pca_transform_dtype)]
+fn pca_transform(inputs: &[Series], kwargs: PcaTransformKwargs) -> PolarsResult<Series> {
+    let dense = DenseFrame::from_series(inputs, kwargs.null_policy)?;
+    let options = pca::Options {
+        n_components: Some(kwargs.n_components),
+        centre: kwargs.centre,
+        scale: kwargs.scale,
+    };
+    let found = pca::pca(dense.matrix(), &options)?;
+    let scores = pca::scores(dense.matrix(), &found);
+
+    let fields: Vec<Series> = component_names(kwargs.n_components)
+        .iter()
+        .enumerate()
+        .map(|(index, name)| {
+            result::scattered(
+                name,
+                dense.valid(),
+                (0..scores.nrows()).map(|i| scores[(i, index)]),
+            )
+        })
+        .collect();
+    result::struct_rows("pca_transform", dense.height(), &fields)
+}

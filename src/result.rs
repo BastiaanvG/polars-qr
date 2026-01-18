@@ -59,6 +59,28 @@ pub fn struct_row(name: &str, fields: &[Series]) -> PolarsResult<Series> {
     Ok(StructChunked::from_series(name.into(), 1, fields.iter())?.into_series())
 }
 
+/// Assemble `fields` into the struct that a row-preserving operation returns.
+pub fn struct_rows(name: &str, height: usize, fields: &[Series]) -> PolarsResult<Series> {
+    Ok(StructChunked::from_series(name.into(), height, fields.iter())?.into_series())
+}
+
+/// Spread `values` back over the rows they were read from.
+///
+/// A row-preserving operation is handed the rows that survived the null policy, but has to
+/// answer for every row it was given; the ones that were dropped come back as null.
+pub fn scattered(name: &str, valid: &[bool], values: impl Iterator<Item = f64>) -> Series {
+    let mut builder = PrimitiveChunkedBuilder::<Float64Type>::new(name.into(), valid.len());
+    let mut values = values;
+    for kept in valid {
+        if *kept {
+            builder.append_value(values.next().unwrap_or(f64::NAN));
+        } else {
+            builder.append_null();
+        }
+    }
+    builder.finish().into_series()
+}
+
 /// The dtype of a field written by [`float_list`].
 pub fn float_list_dtype() -> DataType {
     DataType::List(Box::new(DataType::Float64))

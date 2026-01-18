@@ -124,3 +124,49 @@ def test_the_variance_decreases_from_one_component_to_the_next(frame):
 
     variance = out["explained_variance"][0].to_list()
     assert variance == sorted(variance, reverse=True)
+
+
+def test_scores_project_the_rows_onto_the_components(frame):
+    out = frame.select(pf.pca_transform(FEATURES, n_components=2).alias("scores")).unnest("scores")
+
+    fit = frame.select(pf.pca(FEATURES, n_components=2).alias("pca")).unnest("pca")
+    x = frame.select(FEATURES).to_numpy()
+    components = np.array(fit["components"][0].to_list())
+    expected = (x - x.mean(axis=0)) @ components.T
+    assert out.columns == ["component_1", "component_2"]
+    assert np.allclose(out.to_numpy(), expected)
+
+
+def test_scores_keep_one_row_per_input_row(frame):
+    out = frame.select(pf.pca_transform(FEATURES, n_components=1).alias("scores"))
+
+    assert out.height == frame.height
+
+
+def test_a_dropped_row_scores_null(frame):
+    with_null = frame.with_columns(
+        pl.when(pl.arange(0, frame.height) == 4).then(None).otherwise(pl.col("c")).alias("c")
+    )
+
+    out = with_null.select(
+        pf.pca_transform(FEATURES, n_components=2, null_policy="drop").alias("scores")
+    ).unnest("scores")
+
+    assert out.height == frame.height
+    assert out["component_1"][4] is None
+    assert out["component_1"].null_count() == 1
+
+
+def test_scores_can_be_taken_within_a_group(frame):
+    out = frame.with_columns(
+        pf.pca_transform(FEATURES, n_components=1).over("group").alias("scores")
+    ).unnest("scores")
+
+    for group in frame["group"].unique():
+        rows = frame.filter(pl.col("group") == group)
+        x = rows.select(FEATURES).to_numpy()
+        fit = rows.select(pf.pca(FEATURES, n_components=1).alias("pca")).unnest("pca")
+        components = np.array(fit["components"][0].to_list())
+        expected = (x - x.mean(axis=0)) @ components.T
+        got = out.filter(pl.col("group") == group)["component_1"].to_numpy()
+        assert np.allclose(got, expected.ravel())

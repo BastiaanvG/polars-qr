@@ -102,6 +102,16 @@ pub fn pca(x: MatRef<'_, f64>, options: &Options) -> PolarsResult<Pca> {
     })
 }
 
+/// Score the observations in `x` on the components that were found from them.
+///
+/// The scores are the transformed observations projected onto the components, one column
+/// per component and one row per observation, in the order the observations were given.
+pub fn scores(x: MatRef<'_, f64>, found: &Pca) -> Mat<f64> {
+    let (n, p) = (x.nrows(), x.ncols());
+    let transformed = Mat::from_fn(n, p, |i, j| (x[(i, j)] - found.means[j]) / found.scales[j]);
+    transformed * found.components.transpose()
+}
+
 /// Give every component a sign that does not depend on the factorisation.
 ///
 /// A singular vector and its negation describe the same direction, and which one comes out
@@ -376,6 +386,49 @@ mod tests {
         assert_eq!(result.components.nrows(), 2);
         assert_eq!(result.components.ncols(), 3);
         assert_eq!(result.singular_values.len(), 2);
+    }
+
+    #[test]
+    fn scores_are_the_observations_seen_along_the_components() {
+        // The cloud lies on b = 2a, so the first score is the distance along that line.
+        let x = matrix(&[&[-2.0, -4.0], &[-1.0, -2.0], &[1.0, 2.0], &[2.0, 4.0]]);
+
+        let found = pca(
+            x.as_ref(),
+            &Options {
+                n_components: Some(1),
+                ..centred()
+            },
+        )
+        .unwrap();
+        let scores = scores(x.as_ref(), &found);
+
+        assert_eq!(scores.nrows(), 4);
+        assert_eq!(scores.ncols(), 1);
+        let unit = 5.0f64.sqrt();
+        for (row, expected) in [-2.0, -1.0, 1.0, 2.0].iter().enumerate() {
+            assert!((scores[(row, 0)] - expected * unit).abs() < 1e-12);
+        }
+    }
+
+    #[test]
+    fn scores_have_the_variance_the_components_claim() {
+        let x = matrix(&[
+            &[1.0, 0.5, -1.0],
+            &[2.0, -1.0, 0.0],
+            &[3.0, 2.0, 1.0],
+            &[-1.0, 0.0, 2.0],
+        ]);
+
+        let found = pca(x.as_ref(), &centred()).unwrap();
+        let scores = scores(x.as_ref(), &found);
+
+        for j in 0..found.components.nrows() {
+            let mean = (0..4).map(|i| scores[(i, j)]).sum::<f64>() / 4.0;
+            let variance = (0..4).map(|i| (scores[(i, j)] - mean).powi(2)).sum::<f64>() / 3.0;
+            assert!(mean.abs() < 1e-12);
+            assert!((variance - found.explained_variance[j]).abs() < 1e-12);
+        }
     }
 
     #[test]
