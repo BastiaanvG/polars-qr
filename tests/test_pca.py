@@ -170,3 +170,29 @@ def test_scores_can_be_taken_within_a_group(frame):
         expected = (x - x.mean(axis=0)) @ components.T
         got = out.filter(pl.col("group") == group)["component_1"].to_numpy()
         assert np.allclose(got, expected.ravel())
+
+
+def test_the_frame_namespace_adds_the_score_columns(frame):
+    out = frame.faer.pca_transform(FEATURES, n_components=2)
+
+    expected = frame.select(pf.pca_transform(FEATURES, n_components=2).alias("scores")).unnest(
+        "scores"
+    )
+    assert out.columns == [*frame.columns, "component_1", "component_2"]
+    assert np.allclose(out.select(["component_1", "component_2"]).to_numpy(), expected.to_numpy())
+
+
+def test_the_frame_namespace_can_group(frame):
+    out = frame.faer.pca_transform(FEATURES, n_components=1, by="group")
+
+    expected = frame.with_columns(
+        pf.pca_transform(FEATURES, n_components=1).over("group").alias("scores")
+    ).unnest("scores")
+    assert np.allclose(out["component_1"].to_numpy(), expected["component_1"].to_numpy())
+
+
+def test_the_lazy_namespace_matches_the_eager_one(frame):
+    lazy = frame.lazy().faer.pca_transform(FEATURES, n_components=2, by="group").collect()
+    eager = frame.faer.pca_transform(FEATURES, n_components=2, by="group")
+
+    assert lazy.equals(eager)

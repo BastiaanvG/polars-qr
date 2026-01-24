@@ -55,6 +55,15 @@ fit = (
 | `pf.least_squares` | Coefficients per target, with rank, residuals and a condition estimate |
 | `pf.covariance` | A labelled covariance matrix with means and standard deviations |
 | `pf.correlation` | The same, divided through by the standard deviations |
+| `pf.pca` | Loadings, singular values and explained variance |
+| `pf.pca_transform` | One score column per component, aligned with the input rows |
+
+Row-preserving operations are also reachable from a frame, where the grouping and the
+unnesting are part of the call:
+
+```python
+scored = frame.lazy().faer.pca_transform(signals, n_components=10, by="date").collect()
+```
 
 ## Development
 
