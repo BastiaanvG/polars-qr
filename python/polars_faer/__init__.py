@@ -6,6 +6,7 @@ from polars_faer.covariance import correlation, covariance
 from polars_faer.least_squares import least_squares
 from polars_faer.namespace import FaerFrame, FaerLazyFrame
 from polars_faer.pca import pca, pca_transform
+from polars_faer.spd import solve_spd
 
 try:
     __version__ = version("polars-faer")
@@ -21,4 +22,5 @@ __all__ = [
     "least_squares",
     "pca",
     "pca_transform",
+    "solve_spd",
 ]

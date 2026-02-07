@@ -9,6 +9,7 @@ use crate::dense::{column_names, DenseFrame, NullPolicy};
 use crate::least_squares::{self, Solver};
 use crate::pca;
 use crate::result;
+use crate::spd;
 use crate::weights::Weights;
 
 /// The version of the compiled plugin, so a stale build is easy to spot from Python.
@@ -292,4 +293,91 @@ fn pca_transform(inputs: &[Series], kwargs: PcaTransformKwargs) -> PolarsResult<
         })
         .collect();
     result::struct_rows("pca_transform", dense.height(), &fields)
+}
+
+#[derive(Deserialize)]
+struct SolveSpdKwargs {
+    n_matrix: usize,
+    n_rhs: usize,
+    diagonal_shift: f64,
+}
+
+fn solve_spd_dtype(_: &[Field]) -> PolarsResult<Field> {
+    Ok(Field::new(
+        "solve_spd".into(),
+        DataType::Struct(vec![
+            Field::new("rows".into(), result::string_list_dtype()),
+            Field::new("rhs".into(), result::string_list_dtype()),
+            Field::new("solution".into(), result::matrix_dtype()),
+            Field::new("size".into(), DataType::UInt32),
+            Field::new("symmetry_error".into(), DataType::Float64),
+            Field::new("diagonal_shift".into(), DataType::Float64),
+        ]),
+    ))
+}
+
+/// Solve a positive-definite system given as a wide frame.
+///
+/// The inputs arrive as the matrix columns, then the right-hand sides, then the row index.
+/// The rows are put in the order of that index before anything is read, so the matrix does
+/// not depend on the order the frame happens to be in.
+#[polars_expr(output_type_func=solve_spd_dtype)]
+fn solve_spd(inputs: &[Series], kwargs: SolveSpdKwargs) -> PolarsResult<Series> {
+    let (n_matrix, n_rhs) = (kwargs.n_matrix, kwargs.n_rhs);
+    if n_matrix == 0 || n_rhs == 0 {
+        polars_bail!(InvalidOperation: "solve_spd needs a matrix and at least one right-hand side");
+    }
+
+    let order = row_order(&inputs[n_matrix + n_rhs])?;
+    let ordered: Vec<Series> = inputs[..n_matrix + n_rhs]
+        .iter()
+        .map(|series| series.take(&order))
+        .collect::<PolarsResult<_>>()?;
+
+    // Dropping rows would change the shape of the matrix, so the only policy that makes
+    // sense here is to insist on complete input.
+    let dense = DenseFrame::from_series(&ordered, NullPolicy::Raise)?;
+    let matrix = dense.matrix();
+    let solved = spd::solve_spd(
+        matrix.subcols(0, n_matrix),
+        matrix.subcols(n_matrix, n_rhs),
+        &spd::Options {
+            diagonal_shift: kwargs.diagonal_shift,
+        },
+    )?;
+    let names = column_names(inputs);
+
+    result::struct_row(
+        "solve_spd",
+        &[
+            result::string_list("rows", &names[..n_matrix]),
+            result::string_list("rhs", &names[n_matrix..n_matrix + n_rhs]),
+            result::matrix_rows("solution", solved.solution.transpose()),
+            result::count("size", n_matrix),
+            result::number("symmetry_error", solved.symmetry_error),
+            result::number("diagonal_shift", kwargs.diagonal_shift),
+        ],
+    )
+}
+
+/// The order the rows have to be read in, taken from an integer index column.
+fn row_order(index: &Series) -> PolarsResult<IdxCa> {
+    if !index.dtype().is_integer() {
+        polars_bail!(
+            InvalidOperation:
+            "the row index '{}' has dtype {}, which is not an integer",
+            index.name(), index.dtype(),
+        );
+    }
+    if index.null_count() > 0 {
+        polars_bail!(ComputeError: "the row index '{}' has nulls", index.name());
+    }
+    if index.n_unique()? != index.len() {
+        polars_bail!(
+            ComputeError:
+            "the row index '{}' repeats a value, so the rows have no single order",
+            index.name(),
+        );
+    }
+    Ok(index.arg_sort(SortOptions::default().with_maintain_order(true)))
 }

@@ -57,6 +57,7 @@ fit = (
 | `pf.correlation` | The same, divided through by the standard deviations |
 | `pf.pca` | Loadings, singular values and explained variance |
 | `pf.pca_transform` | One score column per component, aligned with the input rows |
+| `pf.solve_spd` | The solution of a positive-definite system, one per right-hand side |
 
 Row-preserving operations are also reachable from a frame, where the grouping and the
 unnesting are part of the call:
