@@ -14,12 +14,12 @@ crate-type = ["cdylib", "rlib"]
 faer = "0.24.0"
 # `dtype-array` is not used directly, but the plugin bridge in pyo3-polars needs the
 # variant to be present in polars' value enum.
-polars = { version = "0.52.0", default-features = false, features = [
+polars = { version = "0.53.0", default-features = false, features = [
     "dtype-array",
     "dtype-struct",
 ] }
-pyo3 = { version = "0.26", features = ["abi3-py311"] }
-pyo3-polars = { version = "0.25.0", features = ["derive"] }
+pyo3 = { version = "0.27", features = ["abi3-py311"] }
+pyo3-polars = { version = "0.26.0", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
 
 [profile.release]
