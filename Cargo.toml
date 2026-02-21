@@ -1,6 +1,6 @@
 [package]
 name = "polars-faer"
-version = "0.0.1"
+version = "0.1.0"
 edition = "2021"
 license = "BSD-3-Clause"
 description = "Dense numerical operations for Polars, backed by faer."

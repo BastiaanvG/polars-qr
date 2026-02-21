@@ -3,9 +3,107 @@
 Dense numerical operations for [Polars](https://pola.rs), backed by
 [faer](https://github.com/sarah-quinones/faer-rs).
 
+Some numerical work does not fit an elementwise expression: fitting several targets against
+one feature matrix, decomposing a block of columns, solving a covariance system. Writing
+those in Polars means leaving the query plan, materialising to NumPy, and putting the result
+back. polars-faer keeps them inside the plan.
+
 The package is an expression plugin. Every operation is a Polars expression, so it composes
-with grouping, lazy execution and the rest of a query plan, and the numerics run in Rust
-without a round trip through Python.
+with grouping, lazy execution and the rest of a query plan, and the numerics run in Rust.
+
+```python
+import polars as pl
+import polars_faer as pf
+
+fit = (
+    frame.lazy()
+    .group_by("date")
+    .agg(pf.least_squares("return", ["signal_a", "signal_b"], intercept=True).alias("fit"))
+    .unnest("fit")
+    .collect()
+)
+```
+
+## Installing
+
+```bash
+pip install polars-faer
+```
+
+## Operations
+
+| Operation | Returns |
+| --- | --- |
+| `pf.least_squares` | Coefficients per target, with rank, residuals and a condition estimate |
+| `pf.pca` | Loadings, singular values and explained variance |
+| `pf.pca_transform` | One score column per component, aligned with the input rows |
+| `pf.covariance` | A labelled covariance matrix with means and standard deviations |
+| `pf.correlation` | The same, divided through by the standard deviations |
+| `pf.solve_spd` | The solution of a positive-definite system, one per right-hand side |
+
+### Least squares
+
+One implementation covers ordinary fitting, weighted fitting, several targets at once,
+ridge-penalised fitting and underdetermined systems. It is named after the problem it
+solves rather than after one use of it.
+
+```python
+fit = frame.select(
+    pf.least_squares(
+        ["return_1h", "return_6h"],   # several targets share one factorisation
+        feature_columns,
+        weights="liquidity",          # optional, finite and non-negative
+        intercept=True,
+        solver="qr",                  # "svd" for rank-deficient or underdetermined systems
+        l2_penalty=0.0,
+    ).alias("fit")
+).unnest("fit")
+```
+
+`solver="qr"` is the fast route and needs the features to have full column rank.
+`solver="svd"` also solves rank-deficient and underdetermined systems, returning the
+solution of smallest norm, and reports the singular values it used.
+
+### Principal components
+
+```python
+components = frame.select(pf.pca(feature_columns, n_components=10).alias("pca")).unnest("pca")
+
+scored = frame.lazy().faer.pca_transform(feature_columns, n_components=10, by="date").collect()
+```
+
+`pca` reports the loadings, the singular values, the explained variance and its ratio.
+`pca_transform` keeps its rows, so the scores land next to the data they came from. The sign
+of each component is fixed so that its largest loading is positive, which keeps two runs
+over the same data comparable.
+
+### Covariance and correlation
+
+```python
+risk = frame.select(pf.covariance(feature_columns, weights="recency").alias("cov")).unnest("cov")
+```
+
+Weights are read as reliability weights: scaling all of them by the same factor leaves the
+estimate alone, and the divisor is corrected for them the way `numpy.cov(aweights=...)`
+corrects it.
+
+### Positive-definite systems
+
+```python
+solution = wide.select(
+    pf.solve_spd(
+        matrix_columns,
+        ["expected", "exposure"],
+        row_index="asset_index",
+        diagonal_shift=1e-8,
+    ).alias("solved")
+).unnest("solved")
+```
+
+The matrix is read from a wide frame, one column per matrix column and one row per matrix
+row, with `row_index` fixing which row is which. It is checked for symmetry, shifted along
+the diagonal if asked, factorised once, and every right-hand side is solved against that
+factorisation.
 
 ## The input contract
 
@@ -33,38 +131,14 @@ labels needed to read them, so nothing depends on the caller remembering the col
 - Diagnostics such as the numerical rank, a condition estimate or the sum of the weights are
   fields of the same struct, not separate operations.
 
-`unnest` turns the struct into ordinary columns:
+`unnest` turns the struct into ordinary columns.
 
-```python
-import polars as pl
-import polars_faer as pf
+## What this is not
 
-fit = (
-    prices.lazy()
-    .group_by("date")
-    .agg(pf.least_squares("excess_return", ["factor_a", "factor_b"]).alias("fit"))
-    .unnest("fit")
-    .collect()
-)
-```
-
-## Operations
-
-| Operation | Returns |
-| --- | --- |
-| `pf.least_squares` | Coefficients per target, with rank, residuals and a condition estimate |
-| `pf.covariance` | A labelled covariance matrix with means and standard deviations |
-| `pf.correlation` | The same, divided through by the standard deviations |
-| `pf.pca` | Loadings, singular values and explained variance |
-| `pf.pca_transform` | One score column per component, aligned with the input rows |
-| `pf.solve_spd` | The solution of a positive-definite system, one per right-hand side |
-
-Row-preserving operations are also reachable from a frame, where the grouping and the
-unnesting are part of the call:
-
-```python
-scored = frame.lazy().faer.pca_transform(signals, n_components=10, by="date").collect()
-```
+polars-faer is a small set of dense operations, not a regression library, a statistics
+package or a wrapper around faer. There is no matrix object crossing into Python, no formula
+parsing, no sparse support, and no raw factorisations: an operation is exposed when it is
+useful in itself, not because a decomposition can compute it.
 
 ## Development
 
@@ -76,3 +150,7 @@ uv run maturin develop --release --uv
 uv run pytest
 cargo test
 ```
+
+## Licence
+
+BSD 3-Clause.
