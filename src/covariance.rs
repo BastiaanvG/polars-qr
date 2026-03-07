@@ -48,7 +48,9 @@ pub fn covariance(
     };
 
     let divisor = sum_weights - options.ddof * sum_squared_weights / sum_weights;
-    if divisor <= 0.0 {
+    // Written to catch a divisor that is not a number as well as one that is too small: an
+    // empty sample makes the correction term 0/0, and NaN passes every ordinary comparison.
+    if !(divisor > 0.0) {
         polars_bail!(
             ComputeError:
             "{} observations with ddof={} leaves nothing to divide by", n, options.ddof,

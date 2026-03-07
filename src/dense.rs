@@ -78,6 +78,20 @@ impl DenseFrame {
         }
 
         let n_rows = valid.iter().filter(|kept| **kept).count();
+        // Nothing in this crate has an answer for an empty matrix, and several operations
+        // would quietly produce NaN from one rather than fail, so it is refused here.
+        if n_rows == 0 {
+            if height == 0 {
+                polars_bail!(ComputeError: "the input has no rows");
+            }
+            polars_bail!(
+                ComputeError:
+                "all {} rows were dropped as null or non-finite, leaving nothing to \
+                 compute from",
+                height,
+            );
+        }
+
         let mut values = Mat::<f64>::zeros(n_rows, n_cols);
         for (j, column) in columns.iter().enumerate() {
             let column = column.f64()?;
@@ -200,6 +214,20 @@ mod tests {
     #[test]
     fn rejects_an_empty_input() {
         assert!(DenseFrame::from_series(&[], NullPolicy::Raise).is_err());
+    }
+
+    #[test]
+    fn rejects_a_column_with_no_rows() {
+        let inputs = [series("a", &[])];
+
+        assert!(DenseFrame::from_series(&inputs, NullPolicy::Raise).is_err());
+    }
+
+    #[test]
+    fn rejects_an_input_whose_rows_are_all_dropped() {
+        let inputs = [Series::new("a".into(), [None::<f64>, None])];
+
+        assert!(DenseFrame::from_series(&inputs, NullPolicy::Drop).is_err());
     }
 
     #[test]
