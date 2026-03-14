@@ -140,6 +140,15 @@ package or a wrapper around faer. There is no matrix object crossing into Python
 parsing, no sparse support, and no raw factorisations: an operation is exposed when it is
 useful in itself, not because a decomposition can compute it.
 
+## Examples
+
+The `examples/` directory holds runnable scripts covering each operation; the test suite
+runs them, so they cannot drift from the code.
+
+```bash
+uv run python examples/01_least_squares.py
+```
+
 ## Development
 
 The extension is built with [maturin](https://www.maturin.rs) and needs a Rust toolchain.

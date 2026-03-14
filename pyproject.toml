@@ -36,7 +36,7 @@ test = ["numpy>=2.3", "pytest>=8.4"]
 [tool.ruff]
 line-length = 100
 target-version = "py311"
-src = ["python", "tests"]
+src = ["python", "tests", "examples"]
 
 [tool.ruff.lint]
 select = [
@@ -86,6 +86,11 @@ convention = "numpy"
 max-args = 10
 
 [tool.ruff.lint.per-file-ignores]
+"examples/**" = [
+    "D",       # examples read as scripts, not API surface
+    "INP",     # nor are they an importable package
+    "T20",     # examples print their results
+]
 "tests/**" = [
     "ANN",     # tests need no annotations
     "D",       # nor docstrings
@@ -94,7 +99,7 @@ max-args = 10
 ]
 
 [tool.mypy]
-files = ["python", "tests"]
+files = ["python", "tests", "examples"]
 # The package lives under `python/`, and the tests are not a package at all; both need a
 # base directory before mypy can name their modules.
 mypy_path = "python"
@@ -106,7 +111,7 @@ disallow_any_generics = true
 enable_error_code = ["ignore-without-code", "redundant-expr", "truthy-bool"]
 
 [[tool.mypy.overrides]]
-module = ["tests.*"]
+module = ["tests.*", "examples.*"]
 disallow_untyped_calls = false
 disallow_untyped_defs = false
 
