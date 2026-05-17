@@ -33,3 +33,22 @@ def as_expressions(columns: IntoExprColumns) -> list[pl.Expr]:
         message = "at least one column is required"
         raise ValueError(message)
     return expressions
+
+
+def output_names(expressions: Sequence[pl.Expr]) -> list[str]:
+    """Name each expression the way its output column will be named.
+
+    The names have to be worked out here rather than read off the data: inside a grouped
+    aggregation Polars hands a plugin its inputs without names, and a result that labels
+    itself would have nothing to label itself with.
+
+    Parameters
+    ----------
+    expressions
+        The expressions whose output names are wanted.
+    """
+    names = []
+    for position, expression in enumerate(expressions):
+        name = expression.meta.output_name(raise_if_undetermined=False)
+        names.append(name if name else f"column_{position}")
+    return names

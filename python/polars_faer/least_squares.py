@@ -1,7 +1,14 @@
 import polars as pl
 
 from polars_faer._plugin import plugin_expr
-from polars_faer._typing import IntoExpr, IntoExprColumns, NullPolicy, Solver, as_expressions
+from polars_faer._typing import (
+    IntoExpr,
+    IntoExprColumns,
+    NullPolicy,
+    Solver,
+    as_expressions,
+    output_names,
+)
 
 __all__ = ["least_squares"]
 
@@ -77,6 +84,7 @@ def least_squares(
         "least_squares",
         [*target_columns, *feature_columns, *weight_columns],
         {
+            "names": output_names([*target_columns, *feature_columns, *weight_columns]),
             "n_targets": len(target_columns),
             "weighted": weights is not None,
             "intercept": intercept,

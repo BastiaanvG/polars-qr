@@ -1,7 +1,7 @@
 import polars as pl
 
 from polars_faer._plugin import plugin_expr
-from polars_faer._typing import IntoExpr, IntoExprColumns, as_expressions
+from polars_faer._typing import IntoExpr, IntoExprColumns, as_expressions, output_names
 
 __all__ = ["solve_spd"]
 
@@ -63,6 +63,7 @@ def solve_spd(
         "solve_spd",
         [*matrix_columns, *rhs_columns, *index_column],
         {
+            "names": output_names([*matrix_columns, *rhs_columns, *index_column]),
             "n_matrix": len(matrix_columns),
             "n_rhs": len(rhs_columns),
             "diagonal_shift": diagonal_shift,

@@ -163,11 +163,6 @@ fn check_numeric(series: &Series) -> PolarsResult<()> {
     }
 }
 
-/// Collect the names of the input columns, in order.
-pub fn column_names(inputs: &[Series]) -> Vec<String> {
-    inputs.iter().map(|s| s.name().to_string()).collect()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -186,7 +181,6 @@ mod tests {
         assert_eq!(dense.matrix()[(0, 0)], 1.0);
         assert_eq!(dense.matrix()[(1, 0)], 2.0);
         assert_eq!(dense.matrix()[(0, 1)], 3.0);
-        assert_eq!(column_names(&inputs), ["a", "b"]);
     }
 
     #[test]

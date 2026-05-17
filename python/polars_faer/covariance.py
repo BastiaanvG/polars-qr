@@ -1,7 +1,7 @@
 import polars as pl
 
 from polars_faer._plugin import plugin_expr
-from polars_faer._typing import IntoExpr, IntoExprColumns, NullPolicy, as_expressions
+from polars_faer._typing import IntoExpr, IntoExprColumns, NullPolicy, as_expressions, output_names
 
 __all__ = ["correlation", "covariance"]
 
@@ -57,6 +57,7 @@ def covariance(
         "covariance",
         [*columns, *weight_columns],
         {
+            "names": output_names([*columns, *weight_columns]),
             "ddof": ddof,
             "weighted": weights is not None,
             "normalise": False,
@@ -106,6 +107,7 @@ def correlation(
         "correlation",
         [*columns, *weight_columns],
         {
+            "names": output_names([*columns, *weight_columns]),
             "ddof": ddof,
             "weighted": weights is not None,
             "normalise": True,

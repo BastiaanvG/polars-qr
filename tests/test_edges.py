@@ -64,3 +64,46 @@ def test_a_single_row_still_supports_a_population_covariance(frame):
 
     assert out["n_observations"][0] == 1
     assert np.allclose(out["covariance"][0].to_list(), np.zeros((3, 3)))
+
+
+def test_a_grouped_result_is_still_labelled(frame):
+    # Polars hands a plugin its inputs without names inside an aggregation, so the names
+    # have to come from the expressions instead.
+    out = (
+        frame.lazy()
+        .group_by("group")
+        .agg(pf.least_squares("y", FEATURES).alias("fit"))
+        .unnest("fit")
+        .collect()
+    )
+
+    assert out["features"][0].to_list() == FEATURES
+    assert out["targets"][0].to_list() == ["y"]
+
+
+def test_a_grouped_covariance_is_still_labelled(frame):
+    out = (
+        frame.lazy()
+        .group_by("group")
+        .agg(pf.covariance(FEATURES).alias("cov"))
+        .unnest("cov")
+        .collect()
+    )
+
+    assert out["features"][0].to_list() == FEATURES
+
+
+def test_a_renamed_column_is_reported_under_its_new_name(frame):
+    out = frame.select(
+        pf.least_squares(pl.col("y"), [pl.col("a").alias("renamed"), "b", "c"]).alias("fit")
+    ).unnest("fit")
+
+    assert out["features"][0].to_list() == ["renamed", "b", "c"]
+
+
+def test_a_derived_column_is_named_after_what_it_was_derived_from(frame):
+    out = frame.select(
+        pf.least_squares(pl.col("y"), [pl.col("a") + pl.col("b"), pl.col("c") * 2]).alias("fit")
+    ).unnest("fit")
+
+    assert out["features"][0].to_list() == ["a", "c"]

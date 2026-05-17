@@ -99,12 +99,32 @@ pub fn fit(
         None => (design, targets.to_owned()),
     };
 
-    let (penalised, penalised_targets) = penalise(
-        design.as_ref(),
-        scaled_targets.as_ref(),
-        options.l2_penalty,
-        options.intercept,
-    );
+    let mut fit = fit_design(design.as_ref(), scaled_targets.as_ref(), options)?;
+    debug_assert_eq!(fit.coefficients.nrows(), p);
+    fit.n_observations = n;
+    Ok(fit)
+}
+
+/// Fit a design matrix that has already been assembled and weighted.
+///
+/// The constant term, when there is one, is the first column of `design` rather than
+/// something added here. A summary of a fit is a design matrix too — a much shorter one —
+/// so this is the entry point a mergeable state finalises through.
+pub fn fit_design(
+    design: MatRef<'_, f64>,
+    targets: MatRef<'_, f64>,
+    options: &Options,
+) -> PolarsResult<LeastSquaresFit> {
+    let (n, columns) = (design.nrows(), design.ncols());
+    if targets.nrows() != n {
+        polars_bail!(
+            ShapeMismatch:
+            "the targets have {} rows and the design has {}", targets.nrows(), n,
+        );
+    }
+
+    let (penalised, penalised_targets) =
+        penalise(design, targets, options.l2_penalty, options.intercept);
 
     let (solution, diagnostics) = match options.solver {
         Solver::Qr => {
@@ -115,11 +135,13 @@ pub fn fit(
     };
     // The residual is reported for the system that was asked about, not for the padded one
     // the penalty is expressed through.
-    let residual_sum_of_squares =
-        residual_sum_of_squares(design.as_ref(), scaled_targets.as_ref(), solution.as_ref());
+    let residual_sum_of_squares = residual_sum_of_squares(design, targets, solution.as_ref());
 
     let (intercept, coefficients) = split_intercept(solution.as_ref(), options.intercept);
-    debug_assert_eq!(coefficients.nrows(), p);
+    debug_assert_eq!(
+        coefficients.nrows(),
+        columns - usize::from(options.intercept)
+    );
 
     Ok(LeastSquaresFit {
         coefficients,

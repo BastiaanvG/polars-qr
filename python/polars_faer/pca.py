@@ -1,7 +1,7 @@
 import polars as pl
 
 from polars_faer._plugin import plugin_expr
-from polars_faer._typing import IntoExprColumns, NullPolicy, as_expressions
+from polars_faer._typing import IntoExprColumns, NullPolicy, as_expressions, output_names
 
 __all__ = ["pca", "pca_transform"]
 
@@ -64,6 +64,7 @@ def pca(
         "pca",
         columns,
         {
+            "names": output_names(columns),
             "n_components": n_components,
             "centre": centre,
             "scale": scale,
@@ -111,6 +112,7 @@ def pca_transform(
         "pca_transform",
         columns,
         {
+            "names": output_names(columns),
             "n_components": n_components,
             "centre": centre,
             "scale": scale,

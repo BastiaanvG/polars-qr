@@ -5,12 +5,31 @@ use pyo3_polars::derive::polars_expr;
 use serde::Deserialize;
 
 use crate::covariance;
-use crate::dense::{column_names, DenseFrame, NullPolicy};
+use crate::dense::{DenseFrame, NullPolicy};
 use crate::least_squares::{self, Solver};
 use crate::pca;
 use crate::result;
 use crate::spd;
 use crate::weights::Weights;
+
+/// Label the inputs with the names their expressions carry.
+///
+/// Inside a grouped aggregation Polars passes a plugin its inputs without names, so the
+/// names travel as keyword arguments instead. Renaming here means everything downstream —
+/// results and error messages alike — sees the columns the caller asked for.
+fn with_names(inputs: &[Series], names: &[String]) -> PolarsResult<Vec<Series>> {
+    if names.len() != inputs.len() {
+        polars_bail!(
+            ShapeMismatch:
+            "{} inputs were given {} names", inputs.len(), names.len(),
+        );
+    }
+    Ok(inputs
+        .iter()
+        .zip(names)
+        .map(|(series, name)| series.clone().with_name(name.as_str().into()))
+        .collect())
+}
 
 /// The version of the compiled plugin, so a stale build is easy to spot from Python.
 #[polars_expr(output_type=String)]
@@ -21,6 +40,7 @@ fn plugin_version(_inputs: &[Series]) -> PolarsResult<Series> {
 
 #[derive(Deserialize)]
 struct LeastSquaresKwargs {
+    names: Vec<String>,
     n_targets: usize,
     weighted: bool,
     intercept: bool,
@@ -63,12 +83,13 @@ fn least_squares(inputs: &[Series], kwargs: LeastSquaresKwargs) -> PolarsResult<
         polars_bail!(InvalidOperation: "least_squares needs at least one feature");
     }
 
-    let dense = DenseFrame::from_series(inputs, kwargs.null_policy)?;
+    let inputs = with_names(inputs, &kwargs.names)?;
+    let dense = DenseFrame::from_series(&inputs, kwargs.null_policy)?;
     let matrix = dense.matrix();
     let n_features = dense.n_cols() - n_targets - n_weights;
     let targets = matrix.subcols(0, n_targets);
     let features = matrix.subcols(n_targets, n_features);
-    let names = column_names(inputs);
+    let names = &kwargs.names;
 
     let weights = kwargs
         .weighted
@@ -86,11 +107,24 @@ fn least_squares(inputs: &[Series], kwargs: LeastSquaresKwargs) -> PolarsResult<
     };
     let fit = least_squares::fit(features, targets, weights.as_ref(), &options)?;
 
+    least_squares_row(
+        &names[n_targets..n_targets + n_features],
+        &names[..n_targets],
+        &fit,
+    )
+}
+
+/// The one struct row a fit is reported as, however it was arrived at.
+fn least_squares_row(
+    features: &[String],
+    targets: &[String],
+    fit: &least_squares::LeastSquaresFit,
+) -> PolarsResult<Series> {
     result::struct_row(
         "least_squares",
         &[
-            result::string_list("features", &names[n_targets..n_targets + n_features]),
-            result::string_list("targets", &names[..n_targets]),
+            result::string_list("features", features),
+            result::string_list("targets", targets),
             result::matrix_rows("coefficients", fit.coefficients.transpose()),
             result::optional_float_list("intercept", fit.intercept.as_deref()),
             result::count("n_observations", fit.n_observations),
@@ -105,6 +139,7 @@ fn least_squares(inputs: &[Series], kwargs: LeastSquaresKwargs) -> PolarsResult<
 
 #[derive(Deserialize)]
 struct CovarianceKwargs {
+    names: Vec<String>,
     ddof: f64,
     weighted: bool,
     normalise: bool,
@@ -142,8 +177,9 @@ fn second_moments(
     kwargs: &CovarianceKwargs,
     name: &str,
 ) -> PolarsResult<Series> {
-    let dense = DenseFrame::from_series(inputs, kwargs.null_policy)?;
-    let names = column_names(inputs);
+    let inputs = with_names(inputs, &kwargs.names)?;
+    let dense = DenseFrame::from_series(&inputs, kwargs.null_policy)?;
+    let names = &kwargs.names;
     let matrix = dense.matrix();
     let n_features = dense.n_cols() - usize::from(kwargs.weighted);
     if n_features == 0 {
@@ -189,6 +225,7 @@ fn correlation(inputs: &[Series], kwargs: CovarianceKwargs) -> PolarsResult<Seri
 
 #[derive(Deserialize)]
 struct PcaKwargs {
+    names: Vec<String>,
     n_components: Option<usize>,
     centre: bool,
     scale: bool,
@@ -218,14 +255,15 @@ fn pca_dtype(_: &[Field]) -> PolarsResult<Field> {
 /// Find the principal components of the input columns.
 #[polars_expr(output_type_func=pca_dtype)]
 fn pca(inputs: &[Series], kwargs: PcaKwargs) -> PolarsResult<Series> {
-    let dense = DenseFrame::from_series(inputs, kwargs.null_policy)?;
+    let inputs = with_names(inputs, &kwargs.names)?;
+    let dense = DenseFrame::from_series(&inputs, kwargs.null_policy)?;
     let options = pca::Options {
         n_components: kwargs.n_components,
         centre: kwargs.centre,
         scale: kwargs.scale,
     };
     let found = pca::pca(dense.matrix(), &options)?;
-    let names = column_names(inputs);
+    let names = &kwargs.names;
 
     result::struct_row(
         "pca",
@@ -245,6 +283,7 @@ fn pca(inputs: &[Series], kwargs: PcaKwargs) -> PolarsResult<Series> {
 
 #[derive(Deserialize)]
 struct PcaTransformKwargs {
+    names: Vec<String>,
     n_components: usize,
     centre: bool,
     scale: bool,
@@ -272,7 +311,8 @@ fn pca_transform_dtype(_: &[Field], kwargs: PcaTransformKwargs) -> PolarsResult<
 /// the same frame. Rows the null policy dropped score as null.
 #[polars_expr(output_type_func_with_kwargs=pca_transform_dtype)]
 fn pca_transform(inputs: &[Series], kwargs: PcaTransformKwargs) -> PolarsResult<Series> {
-    let dense = DenseFrame::from_series(inputs, kwargs.null_policy)?;
+    let inputs = with_names(inputs, &kwargs.names)?;
+    let dense = DenseFrame::from_series(&inputs, kwargs.null_policy)?;
     let options = pca::Options {
         n_components: Some(kwargs.n_components),
         centre: kwargs.centre,
@@ -297,6 +337,7 @@ fn pca_transform(inputs: &[Series], kwargs: PcaTransformKwargs) -> PolarsResult<
 
 #[derive(Deserialize)]
 struct SolveSpdKwargs {
+    names: Vec<String>,
     n_matrix: usize,
     n_rhs: usize,
     diagonal_shift: f64,
@@ -328,6 +369,7 @@ fn solve_spd(inputs: &[Series], kwargs: SolveSpdKwargs) -> PolarsResult<Series> 
         polars_bail!(InvalidOperation: "solve_spd needs a matrix and at least one right-hand side");
     }
 
+    let inputs = with_names(inputs, &kwargs.names)?;
     let order = row_order(&inputs[n_matrix + n_rhs])?;
     let ordered: Vec<Series> = inputs[..n_matrix + n_rhs]
         .iter()
@@ -345,7 +387,7 @@ fn solve_spd(inputs: &[Series], kwargs: SolveSpdKwargs) -> PolarsResult<Series> 
             diagonal_shift: kwargs.diagonal_shift,
         },
     )?;
-    let names = column_names(inputs);
+    let names = &kwargs.names;
 
     result::struct_row(
         "solve_spd",
