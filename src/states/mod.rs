@@ -6,3 +6,4 @@
 //! any order, and the result is finalised once.
 
 pub mod codec;
+pub mod least_squares;

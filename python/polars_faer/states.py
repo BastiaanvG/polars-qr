@@ -1,0 +1,131 @@
+"""Mergeable state for the operations that have one.
+
+A state is a summary of some rows that is much smaller than the rows themselves and can be
+merged with another summary. Each partition summarises what it holds, the summaries are
+merged in any order, and the result is finalised once. States travel as binary values, so
+they can be written to a file, sent between processes or stored in a table.
+"""
+
+import polars as pl
+
+from polars_faer._plugin import plugin_expr
+from polars_faer._typing import (
+    IntoExpr,
+    IntoExprColumns,
+    NullPolicy,
+    Solver,
+    as_expressions,
+    output_names,
+)
+
+__all__ = [
+    "finalise_least_squares",
+    "least_squares_state",
+    "merge_least_squares_states",
+]
+
+
+def least_squares_state(
+    targets: IntoExprColumns,
+    features: IntoExprColumns,
+    *,
+    weights: IntoExpr | None = None,
+    intercept: bool = False,
+    null_policy: NullPolicy = "raise",
+) -> pl.Expr:
+    """Summarise a least-squares problem over the rows of one partition.
+
+    The summary is the triangular factor of a QR factorisation of the features with the
+    targets appended, which is what lets a fit be assembled from partitions without ever
+    forming the normal equations, whose conditioning is the square of the data's.
+
+    Its size is quadratic in the number of features plus targets, and does not depend on
+    the number of rows.
+
+    Parameters
+    ----------
+    targets
+        The columns to fit.
+    features
+        The columns to fit them against. Their order is fixed in the state.
+    weights
+        An optional column of observation weights, read as in :func:`least_squares`.
+    intercept
+        Whether the summarised design carries a constant term.
+    null_policy
+        `"raise"` to fail on a row that is null or not finite, `"drop"` to leave it out.
+
+    Returns
+    -------
+    An expression producing one binary state per group.
+    """
+    target_columns = as_expressions(targets)
+    feature_columns = as_expressions(features)
+    weight_columns = [] if weights is None else as_expressions(weights)
+    return plugin_expr(
+        "least_squares_state",
+        [*target_columns, *feature_columns, *weight_columns],
+        {
+            "names": output_names([*target_columns, *feature_columns, *weight_columns]),
+            "n_targets": len(target_columns),
+            "weighted": weights is not None,
+            "intercept": intercept,
+            "null_policy": null_policy,
+        },
+        returns_scalar=True,
+    )
+
+
+def merge_least_squares_states(state: IntoExpr) -> pl.Expr:
+    """Merge every state in `state` into one.
+
+    Merging is associative and commutative up to floating point, so the result does not
+    depend on how the rows were partitioned or on the order the partitions arrive in.
+
+    Parameters
+    ----------
+    state
+        A column of states built by :func:`least_squares_state`, or by an earlier merge.
+
+    Returns
+    -------
+    An expression producing one binary state per group.
+    """
+    return plugin_expr(
+        "merge_least_squares_states",
+        as_expressions(state),
+        returns_scalar=True,
+    )
+
+
+def finalise_least_squares(
+    state: IntoExpr,
+    *,
+    solver: Solver = "qr",
+    l2_penalty: float = 0.0,
+) -> pl.Expr:
+    """Solve the problem a state summarises.
+
+    The solver and the penalty are chosen here rather than when the state was built, so one
+    set of summaries can be finalised several ways. A penalty is applied once, at this
+    point, however many partitions the state was merged from.
+
+    Parameters
+    ----------
+    state
+        A column of states, usually the output of :func:`merge_least_squares_states`.
+    solver
+        `"qr"` or `"svd"`, as in :func:`least_squares`.
+    l2_penalty
+        A ridge penalty on the coefficients, applied once here.
+
+    Returns
+    -------
+    An expression producing the same struct as :func:`least_squares`, one per state.
+    """
+    return plugin_expr(
+        "finalise_least_squares",
+        as_expressions(state),
+        {"solver": solver, "l2_penalty": l2_penalty},
+        is_elementwise=True,
+    )

@@ -8,8 +8,9 @@ use crate::covariance;
 use crate::dense::{DenseFrame, NullPolicy};
 use crate::least_squares::{self, Solver};
 use crate::pca;
-use crate::result;
+use crate::result::{self, binary_row, concatenate_rows};
 use crate::spd;
+use crate::states::least_squares::LeastSquaresState;
 use crate::weights::Weights;
 
 /// Label the inputs with the names their expressions carry.
@@ -422,4 +423,92 @@ fn row_order(index: &Series) -> PolarsResult<IdxCa> {
         );
     }
     Ok(index.arg_sort(SortOptions::default().with_maintain_order(true)))
+}
+
+#[derive(Deserialize)]
+struct StateKwargs {
+    names: Vec<String>,
+    n_targets: usize,
+    weighted: bool,
+    intercept: bool,
+    null_policy: NullPolicy,
+}
+
+/// Summarise a partition of a least-squares problem into a state that can be merged.
+#[polars_expr(output_type=Binary)]
+fn least_squares_state(inputs: &[Series], kwargs: StateKwargs) -> PolarsResult<Series> {
+    let n_targets = kwargs.n_targets;
+    let n_weights = usize::from(kwargs.weighted);
+    if n_targets == 0 {
+        polars_bail!(InvalidOperation: "least_squares_state needs at least one target");
+    }
+    if inputs.len() <= n_targets + n_weights {
+        polars_bail!(InvalidOperation: "least_squares_state needs at least one feature");
+    }
+
+    let inputs = with_names(inputs, &kwargs.names)?;
+    let dense = DenseFrame::from_series(&inputs, kwargs.null_policy)?;
+    let matrix = dense.matrix();
+    let n_features = dense.n_cols() - n_targets - n_weights;
+    let names = &kwargs.names;
+    let weights = kwargs
+        .weighted
+        .then(|| {
+            Weights::new(
+                matrix.subcols(dense.n_cols() - 1, 1),
+                &names[names.len() - 1],
+            )
+        })
+        .transpose()?;
+
+    let state = LeastSquaresState::accumulate(
+        matrix.subcols(n_targets, n_features),
+        matrix.subcols(0, n_targets),
+        weights.as_ref(),
+        names[n_targets..n_targets + n_features].to_vec(),
+        names[..n_targets].to_vec(),
+        kwargs.intercept,
+    )?;
+    Ok(binary_row("least_squares_state", state.encode()))
+}
+
+/// Merge every least-squares state in the input into one.
+#[polars_expr(output_type=Binary)]
+fn merge_least_squares_states(inputs: &[Series]) -> PolarsResult<Series> {
+    let states = inputs[0].binary()?;
+    let mut merged: Option<LeastSquaresState> = None;
+    for bytes in states.into_iter().flatten() {
+        let state = LeastSquaresState::decode(bytes)?;
+        merged = Some(match merged {
+            Some(existing) => existing.merge(&state)?,
+            None => state,
+        });
+    }
+    let merged = merged
+        .ok_or_else(|| polars_err!(ComputeError: "there are no least-squares states to merge"))?;
+    Ok(binary_row("least_squares_state", merged.encode()))
+}
+
+#[derive(Deserialize)]
+struct FinaliseLeastSquaresKwargs {
+    solver: Solver,
+    l2_penalty: f64,
+}
+
+/// Solve the problem a merged least-squares state summarises.
+#[polars_expr(output_type_func=least_squares_dtype)]
+fn finalise_least_squares(
+    inputs: &[Series],
+    kwargs: FinaliseLeastSquaresKwargs,
+) -> PolarsResult<Series> {
+    let states = inputs[0].binary()?;
+    let mut rows = Vec::with_capacity(states.len());
+    for bytes in states.into_iter() {
+        let bytes =
+            bytes.ok_or_else(|| polars_err!(ComputeError: "a least-squares state is null"))?;
+        let state = LeastSquaresState::decode(bytes)?;
+        let fit = state.finalise(kwargs.solver, kwargs.l2_penalty)?;
+        rows.push(least_squares_row(&state.features, &state.targets, &fit)?);
+    }
+    concatenate_rows("least_squares", rows, least_squares_dtype(&[])?)
 }

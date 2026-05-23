@@ -81,6 +81,24 @@ pub fn scattered(name: &str, valid: &[bool], values: impl Iterator<Item = f64>) 
     builder.finish().into_series()
 }
 
+/// One row holding a blob.
+pub fn binary_row(name: &str, bytes: Vec<u8>) -> Series {
+    BinaryChunked::from_slice(name.into(), &[bytes.as_slice()]).into_series()
+}
+
+/// Stack one-row results into the column that a row-wise operation returns.
+pub fn concatenate_rows(name: &str, rows: Vec<Series>, dtype: Field) -> PolarsResult<Series> {
+    let Some((first, rest)) = rows.split_first() else {
+        return Ok(Series::new_empty(name.into(), dtype.dtype()));
+    };
+    let mut stacked = first.clone();
+    for row in rest {
+        stacked.append(row)?;
+    }
+    stacked.rename(name.into());
+    Ok(stacked)
+}
+
 /// The dtype of a field written by [`float_list`].
 pub fn float_list_dtype() -> DataType {
     DataType::List(Box::new(DataType::Float64))
