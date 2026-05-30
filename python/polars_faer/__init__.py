@@ -8,8 +8,12 @@ from polars_faer.namespace import FaerFrame, FaerLazyFrame
 from polars_faer.pca import pca, pca_transform
 from polars_faer.spd import solve_spd
 from polars_faer.states import (
+    covariance_state,
+    finalise_correlation,
+    finalise_covariance,
     finalise_least_squares,
     least_squares_state,
+    merge_covariance_states,
     merge_least_squares_states,
 )
 
@@ -24,9 +28,13 @@ __all__ = [
     "__version__",
     "correlation",
     "covariance",
+    "covariance_state",
+    "finalise_correlation",
+    "finalise_covariance",
     "finalise_least_squares",
     "least_squares",
     "least_squares_state",
+    "merge_covariance_states",
     "merge_least_squares_states",
     "pca",
     "pca_transform",

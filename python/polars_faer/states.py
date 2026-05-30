@@ -129,3 +129,109 @@ def finalise_least_squares(
         {"solver": solver, "l2_penalty": l2_penalty},
         is_elementwise=True,
     )
+
+
+def covariance_state(
+    features: IntoExprColumns,
+    *,
+    weights: IntoExpr | None = None,
+    null_policy: NullPolicy = "raise",
+) -> pl.Expr:
+    """Summarise the second moments of `features` over the rows of one partition.
+
+    The summary is the count, the weight, the mean of each column and the cross-products of
+    the columns about those means. Its size is quadratic in the number of columns and does
+    not depend on the number of rows.
+
+    Parameters
+    ----------
+    features
+        The columns to summarise. Their order is fixed in the state.
+    weights
+        An optional column of observation weights, read as in :func:`covariance`.
+    null_policy
+        `"raise"` to fail on a row that is null or not finite, `"drop"` to leave it out.
+
+    Returns
+    -------
+    An expression producing one binary state per group.
+    """
+    columns = as_expressions(features)
+    weight_columns = [] if weights is None else as_expressions(weights)
+    return plugin_expr(
+        "covariance_state",
+        [*columns, *weight_columns],
+        {
+            "names": output_names([*columns, *weight_columns]),
+            "weighted": weights is not None,
+            "null_policy": null_policy,
+        },
+        returns_scalar=True,
+    )
+
+
+def merge_covariance_states(state: IntoExpr) -> pl.Expr:
+    """Merge every state in `state` into one.
+
+    Merging shifts both means onto the mean of the two together and corrects the
+    cross-products for the shift, so the result does not depend on how the rows were
+    partitioned or on the order the partitions arrive in.
+
+    Parameters
+    ----------
+    state
+        A column of states built by :func:`covariance_state`, or by an earlier merge.
+
+    Returns
+    -------
+    An expression producing one binary state per group.
+    """
+    return plugin_expr(
+        "merge_covariance_states",
+        as_expressions(state),
+        returns_scalar=True,
+    )
+
+
+def finalise_covariance(state: IntoExpr, *, ddof: float = 1.0) -> pl.Expr:
+    """Turn a state into the covariance it summarises.
+
+    Parameters
+    ----------
+    state
+        A column of states, usually the output of :func:`merge_covariance_states`.
+    ddof
+        The delta degrees of freedom, chosen here rather than when the state was built.
+
+    Returns
+    -------
+    An expression producing the same struct as :func:`covariance`, one per state.
+    """
+    return plugin_expr(
+        "finalise_covariance",
+        as_expressions(state),
+        {"ddof": ddof, "normalise": False},
+        is_elementwise=True,
+    )
+
+
+def finalise_correlation(state: IntoExpr, *, ddof: float = 1.0) -> pl.Expr:
+    """Turn a state into the correlation it summarises.
+
+    Parameters
+    ----------
+    state
+        A column of states, usually the output of :func:`merge_covariance_states`.
+    ddof
+        The delta degrees of freedom used for the underlying covariance.
+
+    Returns
+    -------
+    An expression producing the same struct as :func:`correlation`, one per state.
+    """
+    return plugin_expr(
+        "finalise_correlation",
+        as_expressions(state),
+        {"ddof": ddof, "normalise": True},
+        is_elementwise=True,
+    )

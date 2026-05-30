@@ -10,6 +10,7 @@ use crate::least_squares::{self, Solver};
 use crate::pca;
 use crate::result::{self, binary_row, concatenate_rows};
 use crate::spd;
+use crate::states::covariance::CovarianceState;
 use crate::states::least_squares::LeastSquaresState;
 use crate::weights::Weights;
 
@@ -198,16 +199,25 @@ fn second_moments(
     let estimate =
         covariance::covariance(matrix.subcols(0, n_features), weights.as_ref(), &options)?;
 
+    second_moment_row(&names[..n_features], &estimate, name)
+}
+
+/// The one struct row a second-moment estimate is reported as, however it was arrived at.
+fn second_moment_row(
+    features: &[String],
+    estimate: &covariance::Covariance,
+    name: &str,
+) -> PolarsResult<Series> {
     result::struct_row(
         name,
         &[
-            result::string_list("features", &names[..n_features]),
+            result::string_list("features", features),
             result::float_list("means", &estimate.means),
             result::float_list("standard_deviations", &estimate.standard_deviations),
             result::matrix_rows(name, estimate.values.as_ref()),
             result::count("n_observations", estimate.n_observations),
             result::number("sum_weights", estimate.sum_weights),
-            result::count("size", n_features),
+            result::count("size", features.len()),
         ],
     )
 }
@@ -511,4 +521,97 @@ fn finalise_least_squares(
         rows.push(least_squares_row(&state.features, &state.targets, &fit)?);
     }
     concatenate_rows("least_squares", rows, least_squares_dtype(&[])?)
+}
+
+#[derive(Deserialize)]
+struct CovarianceStateKwargs {
+    names: Vec<String>,
+    weighted: bool,
+    null_policy: NullPolicy,
+}
+
+/// Summarise a partition of a set of columns into a state that can be merged.
+#[polars_expr(output_type=Binary)]
+fn covariance_state(inputs: &[Series], kwargs: CovarianceStateKwargs) -> PolarsResult<Series> {
+    let inputs = with_names(inputs, &kwargs.names)?;
+    let dense = DenseFrame::from_series(&inputs, kwargs.null_policy)?;
+    let names = &kwargs.names;
+    let matrix = dense.matrix();
+    let n_features = dense.n_cols() - usize::from(kwargs.weighted);
+    if n_features == 0 {
+        polars_bail!(InvalidOperation: "at least one feature is required");
+    }
+
+    let weights = kwargs
+        .weighted
+        .then(|| Weights::new(matrix.subcols(n_features, 1), &names[n_features]))
+        .transpose()?;
+    let state = CovarianceState::accumulate(
+        matrix.subcols(0, n_features),
+        weights.as_ref(),
+        names[..n_features].to_vec(),
+    )?;
+    Ok(binary_row("covariance_state", state.encode()))
+}
+
+/// Merge every covariance state in the input into one.
+#[polars_expr(output_type=Binary)]
+fn merge_covariance_states(inputs: &[Series]) -> PolarsResult<Series> {
+    let states = inputs[0].binary()?;
+    let mut merged: Option<CovarianceState> = None;
+    for bytes in states.into_iter().flatten() {
+        let state = CovarianceState::decode(bytes)?;
+        merged = Some(match merged {
+            Some(existing) => existing.merge(&state)?,
+            None => state,
+        });
+    }
+    let merged = merged
+        .ok_or_else(|| polars_err!(ComputeError: "there are no covariance states to merge"))?;
+    Ok(binary_row("covariance_state", merged.encode()))
+}
+
+#[derive(Deserialize)]
+struct FinaliseCovarianceKwargs {
+    ddof: f64,
+    normalise: bool,
+}
+
+/// Turn a merged covariance state into the matrix it summarises.
+fn finalise_second_moments(
+    inputs: &[Series],
+    kwargs: &FinaliseCovarianceKwargs,
+    name: &str,
+) -> PolarsResult<Series> {
+    let states = inputs[0].binary()?;
+    let options = covariance::Options {
+        ddof: kwargs.ddof,
+        normalise: kwargs.normalise,
+    };
+    let mut rows = Vec::with_capacity(states.len());
+    for bytes in states.into_iter() {
+        let bytes = bytes.ok_or_else(|| polars_err!(ComputeError: "a covariance state is null"))?;
+        let state = CovarianceState::decode(bytes)?;
+        let estimate = state.finalise(&options)?;
+        rows.push(second_moment_row(&state.features, &estimate, name)?);
+    }
+    concatenate_rows(name, rows, second_moment_dtype(name)?)
+}
+
+/// Turn a merged covariance state into the covariance it summarises.
+#[polars_expr(output_type_func=covariance_dtype)]
+fn finalise_covariance(
+    inputs: &[Series],
+    kwargs: FinaliseCovarianceKwargs,
+) -> PolarsResult<Series> {
+    finalise_second_moments(inputs, &kwargs, "covariance")
+}
+
+/// Turn a merged covariance state into the correlation it summarises.
+#[polars_expr(output_type_func=correlation_dtype)]
+fn finalise_correlation(
+    inputs: &[Series],
+    kwargs: FinaliseCovarianceKwargs,
+) -> PolarsResult<Series> {
+    finalise_second_moments(inputs, &kwargs, "correlation")
 }

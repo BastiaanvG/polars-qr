@@ -151,3 +151,76 @@ def test_a_blob_that_is_not_a_state_is_rejected():
 
     with pytest.raises(pl.exceptions.ComputeError, match="not a polars-faer state"):
         frame.select(pf.finalise_least_squares("state"))
+
+
+def covariance_through_states(frame, finaliser=None, **kwargs):
+    finaliser = finaliser or pf.finalise_covariance
+    return (
+        frame.lazy()
+        .group_by("part")
+        .agg(pf.covariance_state(FEATURES, **kwargs).alias("state"))
+        .select(pf.merge_covariance_states("state").alias("state"))
+        .select(finaliser("state").alias("cov"))
+        .unnest("cov")
+        .collect()
+    )
+
+
+def test_a_covariance_through_states_matches_one_in_one_pass(frame, rng):
+    direct = frame.select(pf.covariance(FEATURES).alias("cov")).unnest("cov")
+
+    through = covariance_through_states(partitioned(frame, rng))
+
+    assert np.allclose(through["covariance"][0].to_list(), direct["covariance"][0].to_list())
+    assert np.allclose(through["means"][0].to_list(), direct["means"][0].to_list())
+    assert through["n_observations"][0] == frame.height
+    assert through["features"][0].to_list() == FEATURES
+
+
+def test_the_covariance_partitioning_does_not_change_the_answer(frame, rng):
+    one = covariance_through_states(partitioned(frame, rng, n_parts=2))
+    another = covariance_through_states(partitioned(frame, rng, n_parts=23))
+
+    assert np.allclose(one["covariance"][0].to_list(), another["covariance"][0].to_list())
+    assert np.allclose(one["means"][0].to_list(), another["means"][0].to_list())
+
+
+def test_a_covariance_state_carries_weights(frame, rng):
+    direct = frame.select(pf.covariance(FEATURES, weights="weight").alias("cov")).unnest("cov")
+
+    through = covariance_through_states(partitioned(frame, rng), weights="weight")
+
+    assert np.allclose(through["covariance"][0].to_list(), direct["covariance"][0].to_list())
+    assert np.isclose(through["sum_weights"][0], direct["sum_weights"][0])
+
+
+def test_a_covariance_state_can_be_finalised_as_a_correlation(frame, rng):
+    direct = frame.select(pf.correlation(FEATURES).alias("corr")).unnest("corr")
+
+    through = covariance_through_states(partitioned(frame, rng), finaliser=pf.finalise_correlation)
+
+    assert np.allclose(through["correlation"][0].to_list(), direct["correlation"][0].to_list())
+
+
+def test_the_degrees_of_freedom_are_chosen_when_the_state_is_finalised(frame, rng):
+    parted = partitioned(frame, rng)
+    direct = frame.select(pf.covariance(FEATURES, ddof=0).alias("cov")).unnest("cov")
+
+    through = (
+        parted.lazy()
+        .group_by("part")
+        .agg(pf.covariance_state(FEATURES).alias("state"))
+        .select(pf.merge_covariance_states("state").alias("state"))
+        .select(pf.finalise_covariance("state", ddof=0).alias("cov"))
+        .unnest("cov")
+        .collect()
+    )
+
+    assert np.allclose(through["covariance"][0].to_list(), direct["covariance"][0].to_list())
+
+
+def test_a_least_squares_state_is_not_a_covariance_state(frame):
+    states = frame.select(pf.least_squares_state("y", FEATURES).alias("state"))
+
+    with pytest.raises(pl.exceptions.ComputeError, match="least-squares state, but a covariance"):
+        states.select(pf.finalise_covariance("state"))

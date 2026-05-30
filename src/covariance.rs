@@ -47,27 +47,49 @@ pub fn covariance(
         None => (n as f64, n as f64),
     };
 
-    let divisor = sum_weights - options.ddof * sum_squared_weights / sum_weights;
-    // Written to catch a divisor that is not a number as well as one that is too small: an
-    // empty sample makes the correction term 0/0, and NaN passes every ordinary comparison.
-    if !(divisor > 0.0) {
-        polars_bail!(
-            ComputeError:
-            "{} observations with ddof={} leaves nothing to divide by", n, options.ddof,
-        );
-    }
-
     let weight_of = |i: usize| weights.map_or(1.0, |weights| weights.values()[i]);
     let means: Vec<f64> = (0..p)
         .map(|j| (0..n).map(|i| weight_of(i) * x[(i, j)]).sum::<f64>() / sum_weights)
         .collect();
     let centred = Mat::from_fn(n, p, |i, j| x[(i, j)] - means[j]);
     let weighted = Mat::from_fn(n, p, |i, j| weight_of(i) * centred[(i, j)]);
+    let cross_products = weighted.transpose() * &centred;
 
-    let mut values = weighted.transpose() * &centred;
-    for value in values.col_iter_mut().flat_map(|column| column.iter_mut()) {
-        *value /= divisor;
+    from_moments(
+        &means,
+        cross_products.as_ref(),
+        n,
+        sum_weights,
+        sum_squared_weights,
+        options,
+    )
+}
+
+/// Divide accumulated moments through into a covariance matrix.
+///
+/// The moments can come from one pass over the rows or from a merged summary of several, so
+/// this is where the divisor, the symmetry and the normalisation are decided once for both.
+pub fn from_moments(
+    means: &[f64],
+    cross_products: MatRef<'_, f64>,
+    n_observations: usize,
+    sum_weights: f64,
+    sum_squared_weights: f64,
+    options: &Options,
+) -> PolarsResult<Covariance> {
+    let p = means.len();
+    let divisor = sum_weights - options.ddof * sum_squared_weights / sum_weights;
+    // Written to catch a divisor that is not a number as well as one that is too small: an
+    // empty sample makes the correction term 0/0, and NaN passes every ordinary comparison.
+    if !(divisor > 0.0) {
+        polars_bail!(
+            ComputeError:
+            "{} observations with ddof={} leaves nothing to divide by",
+            n_observations, options.ddof,
+        );
     }
+
+    let mut values = Mat::from_fn(p, p, |i, j| cross_products[(i, j)] / divisor);
     // The matrix is symmetric by construction; make it so to the last bit as well, so that
     // a caller can hand the result straight to a factorisation that checks.
     symmetrise(&mut values);
@@ -78,10 +100,10 @@ pub fn covariance(
     }
 
     Ok(Covariance {
-        means,
+        means: means.to_vec(),
         standard_deviations,
         values,
-        n_observations: n,
+        n_observations,
         sum_weights,
     })
 }
