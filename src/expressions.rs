@@ -487,7 +487,7 @@ fn least_squares_state(inputs: &[Series], kwargs: StateKwargs) -> PolarsResult<S
 fn merge_least_squares_states(inputs: &[Series]) -> PolarsResult<Series> {
     let states = inputs[0].binary()?;
     let mut merged: Option<LeastSquaresState> = None;
-    for bytes in states.into_iter().flatten() {
+    for bytes in states.iter().flatten() {
         let state = LeastSquaresState::decode(bytes)?;
         merged = Some(match merged {
             Some(existing) => existing.merge(&state)?,
@@ -513,7 +513,7 @@ fn finalise_least_squares(
 ) -> PolarsResult<Series> {
     let states = inputs[0].binary()?;
     let mut rows = Vec::with_capacity(states.len());
-    for bytes in states.into_iter() {
+    for bytes in states.iter() {
         let bytes =
             bytes.ok_or_else(|| polars_err!(ComputeError: "a least-squares state is null"))?;
         let state = LeastSquaresState::decode(bytes)?;
@@ -559,7 +559,7 @@ fn covariance_state(inputs: &[Series], kwargs: CovarianceStateKwargs) -> PolarsR
 fn merge_covariance_states(inputs: &[Series]) -> PolarsResult<Series> {
     let states = inputs[0].binary()?;
     let mut merged: Option<CovarianceState> = None;
-    for bytes in states.into_iter().flatten() {
+    for bytes in states.iter().flatten() {
         let state = CovarianceState::decode(bytes)?;
         merged = Some(match merged {
             Some(existing) => existing.merge(&state)?,
@@ -589,7 +589,7 @@ fn finalise_second_moments(
         normalise: kwargs.normalise,
     };
     let mut rows = Vec::with_capacity(states.len());
-    for bytes in states.into_iter() {
+    for bytes in states.iter() {
         let bytes = bytes.ok_or_else(|| polars_err!(ComputeError: "a covariance state is null"))?;
         let state = CovarianceState::decode(bytes)?;
         let estimate = state.finalise(&options)?;
