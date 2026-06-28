@@ -274,12 +274,16 @@ fn pca(inputs: &[Series], kwargs: PcaKwargs) -> PolarsResult<Series> {
         scale: kwargs.scale,
     };
     let found = pca::pca(dense.matrix(), &options)?;
-    let names = &kwargs.names;
 
+    pca_row(&kwargs.names, &found)
+}
+
+/// The one struct row a decomposition is reported as, however it was arrived at.
+fn pca_row(features: &[String], found: &pca::Pca) -> PolarsResult<Series> {
     result::struct_row(
         "pca",
         &[
-            result::string_list("features", &names),
+            result::string_list("features", features),
             result::float_list("means", &found.means),
             result::float_list("scales", &found.scales),
             result::matrix_rows("components", found.components.as_ref()),
@@ -614,4 +618,42 @@ fn finalise_correlation(
     kwargs: FinaliseCovarianceKwargs,
 ) -> PolarsResult<Series> {
     finalise_second_moments(inputs, &kwargs, "correlation")
+}
+
+#[derive(Deserialize)]
+struct FinalisePcaKwargs {
+    n_components: Option<usize>,
+    scale: bool,
+}
+
+/// Find the principal components a merged covariance state implies.
+#[polars_expr(output_type_func=pca_dtype)]
+fn finalise_pca(inputs: &[Series], kwargs: FinalisePcaKwargs) -> PolarsResult<Series> {
+    let states = inputs[0].binary()?;
+    let options = covariance::Options {
+        ddof: 1.0,
+        normalise: kwargs.scale,
+    };
+    let mut rows = Vec::with_capacity(states.len());
+    for bytes in states.iter() {
+        let bytes = bytes.ok_or_else(|| polars_err!(ComputeError: "a covariance state is null"))?;
+        let state = CovarianceState::decode(bytes)?;
+        let estimate = state.finalise(&options)?;
+        // Standardising the columns is the same as decomposing their correlation, so the
+        // scales are what the correlation divided them by.
+        let scales = if kwargs.scale {
+            estimate.standard_deviations.clone()
+        } else {
+            vec![1.0; state.features.len()]
+        };
+        let found = pca::from_covariance(
+            estimate.values.as_ref(),
+            estimate.means.clone(),
+            scales,
+            estimate.n_observations,
+            kwargs.n_components,
+        )?;
+        rows.push(pca_row(&state.features, &found)?);
+    }
+    concatenate_rows("pca", rows, pca_dtype(&[])?)
 }

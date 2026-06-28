@@ -1,6 +1,6 @@
 //! Principal components from a thin SVD.
 
-use faer::{Mat, MatRef};
+use faer::{Mat, MatRef, Side};
 use polars::prelude::*;
 
 use crate::least_squares::singular_value_threshold;
@@ -100,6 +100,83 @@ pub fn pca(x: MatRef<'_, f64>, options: &Options) -> PolarsResult<Pca> {
         rank,
         n_observations: n,
     })
+}
+
+/// Find the principal components of a covariance matrix.
+///
+/// The components of a set of columns are the eigenvectors of their covariance, so a
+/// summary that carries the covariance carries the components too. The route through the
+/// covariance is the one a partitioned decomposition has to take; it costs some precision
+/// against a decomposition of the rows themselves, because forming the covariance squares
+/// the conditioning of the data.
+pub fn from_covariance(
+    covariance: MatRef<'_, f64>,
+    means: Vec<f64>,
+    scales: Vec<f64>,
+    n_observations: usize,
+    n_components: Option<usize>,
+) -> PolarsResult<Pca> {
+    let p = covariance.nrows();
+    if n_observations < 2 {
+        polars_bail!(ComputeError: "principal components need at least two observations");
+    }
+    let n_components = n_components.unwrap_or(p);
+    if n_components == 0 {
+        polars_bail!(InvalidOperation: "at least one component is required");
+    }
+    if n_components > p {
+        polars_bail!(
+            ComputeError:
+            "{} components were asked for, but {} features support at most {}",
+            n_components, p, p,
+        );
+    }
+
+    let eigen = covariance
+        .self_adjoint_eigen(Side::Lower)
+        .map_err(|error| polars_err!(ComputeError: "the eigendecomposition failed: {:?}", error))?;
+
+    // faer returns the eigenvalues in nondecreasing order, and a component is wanted
+    // strongest first.
+    let spectrum = eigen.S().column_vector();
+    let variances: Vec<f64> = (0..p).rev().map(|i| spectrum[i].max(0.0)).collect();
+    let vectors = eigen.U();
+    let mut components = Mat::from_fn(n_components, p, |i, j| vectors[(j, p - 1 - i)]);
+    fix_signs(&mut components);
+
+    let degrees_of_freedom = n_observations as f64 - 1.0;
+    let singular_values: Vec<f64> = variances[..n_components]
+        .iter()
+        .map(|variance| (variance * degrees_of_freedom).sqrt())
+        .collect();
+    let total: f64 = variances.iter().sum();
+    let explained_variance = variances[..n_components].to_vec();
+    let explained_variance_ratio = explained_variance
+        .iter()
+        .map(|variance| if total > 0.0 { variance / total } else { 0.0 })
+        .collect();
+
+    let threshold = variance_threshold(p, variances[0]);
+    Ok(Pca {
+        means,
+        scales,
+        components,
+        singular_values,
+        explained_variance,
+        explained_variance_ratio,
+        rank: variances.iter().filter(|value| **value > threshold).count(),
+        n_observations,
+    })
+}
+
+/// The size below which an eigenvalue of a covariance matrix is treated as zero.
+///
+/// An eigenvalue is the square of a singular value, but the threshold is not squared: a
+/// direction the data does not span comes out of a computed covariance at the size of the
+/// rounding in forming it, which is the largest eigenvalue times a few epsilons, and not at
+/// the square of that.
+fn variance_threshold(size: usize, largest: f64) -> f64 {
+    singular_value_threshold(size, size, largest)
 }
 
 /// Score the observations in `x` on the components that were found from them.

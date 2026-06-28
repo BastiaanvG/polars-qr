@@ -224,3 +224,71 @@ def test_a_least_squares_state_is_not_a_covariance_state(frame):
 
     with pytest.raises(pl.exceptions.ComputeError, match="least-squares state, but a covariance"):
         states.select(pf.finalise_covariance("state"))
+
+
+def test_components_from_a_state_match_ones_from_the_rows(frame, rng):
+    direct = frame.select(pf.pca(FEATURES).alias("pca")).unnest("pca")
+
+    through = (
+        partitioned(frame, rng)
+        .lazy()
+        .group_by("part")
+        .agg(pf.covariance_state(FEATURES).alias("state"))
+        .select(pf.merge_covariance_states("state").alias("state"))
+        .select(pf.finalise_pca("state").alias("pca"))
+        .unnest("pca")
+        .collect()
+    )
+
+    assert np.allclose(
+        through["components"][0].to_list(), direct["components"][0].to_list(), atol=1e-8
+    )
+    assert np.allclose(
+        through["explained_variance"][0].to_list(),
+        direct["explained_variance"][0].to_list(),
+    )
+    assert np.allclose(
+        through["singular_values"][0].to_list(), direct["singular_values"][0].to_list()
+    )
+    assert through["rank"][0] == direct["rank"][0]
+    assert through["n_observations"][0] == frame.height
+    # Merged means agree to within the last bit or two, not exactly: summing a partition at
+    # a time rounds differently from summing every row in one pass.
+    assert np.allclose(through["means"][0].to_list(), direct["means"][0].to_list())
+
+
+def test_a_standardised_decomposition_from_a_state(frame, rng):
+    direct = frame.select(pf.pca(FEATURES, scale=True).alias("pca")).unnest("pca")
+
+    through = (
+        partitioned(frame, rng)
+        .lazy()
+        .group_by("part")
+        .agg(pf.covariance_state(FEATURES).alias("state"))
+        .select(pf.merge_covariance_states("state").alias("state"))
+        .select(pf.finalise_pca("state", scale=True).alias("pca"))
+        .unnest("pca")
+        .collect()
+    )
+
+    assert np.allclose(through["scales"][0].to_list(), direct["scales"][0].to_list())
+    assert np.allclose(
+        through["explained_variance_ratio"][0].to_list(),
+        direct["explained_variance_ratio"][0].to_list(),
+    )
+
+
+def test_only_the_requested_components_come_back_from_a_state(frame, rng):
+    through = (
+        partitioned(frame, rng)
+        .lazy()
+        .group_by("part")
+        .agg(pf.covariance_state(FEATURES).alias("state"))
+        .select(pf.merge_covariance_states("state").alias("state"))
+        .select(pf.finalise_pca("state", n_components=2).alias("pca"))
+        .unnest("pca")
+        .collect()
+    )
+
+    assert len(through["components"][0].to_list()) == 2
+    assert sum(through["explained_variance_ratio"][0].to_list()) < 1.0

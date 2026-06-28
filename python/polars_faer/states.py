@@ -19,8 +19,13 @@ from polars_faer._typing import (
 )
 
 __all__ = [
+    "covariance_state",
+    "finalise_correlation",
+    "finalise_covariance",
     "finalise_least_squares",
+    "finalise_pca",
     "least_squares_state",
+    "merge_covariance_states",
     "merge_least_squares_states",
 ]
 
@@ -233,5 +238,40 @@ def finalise_correlation(state: IntoExpr, *, ddof: float = 1.0) -> pl.Expr:
         "finalise_correlation",
         as_expressions(state),
         {"ddof": ddof, "normalise": True},
+        is_elementwise=True,
+    )
+
+
+def finalise_pca(
+    state: IntoExpr,
+    *,
+    n_components: int | None = None,
+    scale: bool = False,
+) -> pl.Expr:
+    """Find the principal components a covariance state implies.
+
+    The components of a set of columns are the eigenvectors of their covariance, so a
+    summary that carries the covariance carries the components too. This is the route a
+    partitioned decomposition has to take, and it is a little less precise than decomposing
+    the rows themselves: forming the covariance squares the conditioning of the data.
+
+    Parameters
+    ----------
+    state
+        A column of states, usually the output of :func:`merge_covariance_states`.
+    n_components
+        How many components to keep. The default keeps one per feature.
+    scale
+        Whether to standardise the columns first, which is the same as decomposing their
+        correlation instead of their covariance.
+
+    Returns
+    -------
+    An expression producing the same struct as :func:`pca`, one per state.
+    """
+    return plugin_expr(
+        "finalise_pca",
+        as_expressions(state),
+        {"n_components": n_components, "scale": scale},
         is_elementwise=True,
     )
