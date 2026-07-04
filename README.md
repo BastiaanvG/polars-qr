@@ -105,6 +105,41 @@ row, with `row_index` fixing which row is which. It is checked for symmetry, shi
 the diagonal if asked, factorised once, and every right-hand side is solved against that
 factorisation.
 
+## Partitioned data
+
+Least squares and second moments can be computed from a summary of the rows that is much
+smaller than the rows themselves and can be merged with another summary. Each partition
+summarises what it holds, the summaries are merged in any order, and the result is finalised
+once.
+
+```python
+states = (
+    frame.lazy()
+    .group_by("partition")
+    .agg(pf.least_squares_state("return", feature_columns).alias("state"))
+)
+
+fit = (
+    states.select(pf.merge_least_squares_states("state").alias("state"))
+    .select(pf.finalise_least_squares("state", solver="qr").alias("fit"))
+    .unnest("fit")
+    .collect()
+)
+```
+
+A state is a binary value, so it can be written to a file, sent between processes or stored
+in a table and merged later. It carries a format version and a hash of the columns it was
+built for, and refuses to merge into a state that does not match.
+
+| State | Holds | Finalises to |
+| --- | --- | --- |
+| `pf.least_squares_state` | The triangular factor of the design with the targets appended | `pf.finalise_least_squares` |
+| `pf.covariance_state` | Counts, weights, means and centred cross-products | `pf.finalise_covariance`, `pf.finalise_correlation`, `pf.finalise_pca` |
+
+The two states are not interchangeable. Least squares goes through the QR factor because
+solving it from second moments would square the conditioning of the data; second moments go
+through the covariance state because that is what they are.
+
 ## The input contract
 
 An operation reads a set of numeric columns that together form one dense matrix, one row per
