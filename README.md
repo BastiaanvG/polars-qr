@@ -50,11 +50,11 @@ solves rather than after one use of it.
 ```python
 fit = frame.select(
     pf.least_squares(
-        ["return_1h", "return_6h"],   # several targets share one factorisation
+        ["return_1h", "return_6h"],  # several targets share one factorisation
         feature_columns,
-        weights="liquidity",          # optional, finite and non-negative
+        weights="liquidity",  # optional, finite and non-negative
         intercept=True,
-        solver="qr",                  # "svd" for rank-deficient or underdetermined systems
+        solver="qr",  # "svd" for rank-deficient or underdetermined systems
         l2_penalty=0.0,
     ).alias("fit")
 ).unnest("fit")

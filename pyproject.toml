@@ -20,7 +20,7 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Mathematics",
     "Typing :: Typed",
 ]
-dependencies = ["polars>=1.42"]
+dependencies = ["polars>=1.43"]
 dynamic = ["version"]
 
 [tool.maturin]
