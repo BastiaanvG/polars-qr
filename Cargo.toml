@@ -1,5 +1,5 @@
 [package]
-name = "polars-faer"
+name = "polars-qr"
 version = "0.2.0"
 edition = "2021"
 license = "BSD-3-Clause"
@@ -7,7 +7,7 @@ description = "Dense numerical operations for Polars, backed by faer."
 publish = false
 
 [lib]
-name = "polars_faer"
+name = "polars_qr"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]

@@ -2,7 +2,7 @@ import numpy as np
 import polars as pl
 import pytest
 
-import polars_faer as pf
+import polars_qr as pq
 
 FEATURES = ["a", "b", "c"]
 
@@ -14,7 +14,7 @@ def reference(frame, features=FEATURES, target="y"):
 
 
 def test_coefficients_match_a_reference_solve(frame):
-    out = frame.select(pf.least_squares("y", FEATURES).alias("fit")).unnest("fit")
+    out = frame.select(pq.least_squares("y", FEATURES).alias("fit")).unnest("fit")
 
     coefficients, residuals, _, _ = reference(frame)
     assert out["features"][0].to_list() == FEATURES
@@ -25,7 +25,7 @@ def test_coefficients_match_a_reference_solve(frame):
 
 
 def test_a_single_feature_is_accepted(frame):
-    out = frame.select(pf.least_squares("y", "a").alias("fit")).unnest("fit")
+    out = frame.select(pq.least_squares("y", "a").alias("fit")).unnest("fit")
 
     coefficients, _, _, _ = reference(frame, features=["a"])
     assert out["features"][0].to_list() == ["a"]
@@ -34,7 +34,7 @@ def test_a_single_feature_is_accepted(frame):
 
 def test_expressions_may_be_passed_instead_of_names(frame):
     out = frame.select(
-        pf.least_squares(pl.col("y"), [pl.col("a"), pl.col("b"), pl.col("c")]).alias("fit")
+        pq.least_squares(pl.col("y"), [pl.col("a"), pl.col("b"), pl.col("c")]).alias("fit")
     ).unnest("fit")
 
     coefficients, _, _, _ = reference(frame)
@@ -45,7 +45,7 @@ def test_each_group_is_fitted_on_its_own_rows(frame):
     out = (
         frame.lazy()
         .group_by("group")
-        .agg(pf.least_squares("y", FEATURES).alias("fit"))
+        .agg(pq.least_squares("y", FEATURES).alias("fit"))
         .unnest("fit")
         .collect()
     )
@@ -59,8 +59,8 @@ def test_each_group_is_fitted_on_its_own_rows(frame):
 
 
 def test_a_lazy_frame_gives_the_same_answer(frame):
-    eager = frame.select(pf.least_squares("y", FEATURES).alias("fit")).unnest("fit")
-    lazy = frame.lazy().select(pf.least_squares("y", FEATURES).alias("fit")).unnest("fit").collect()
+    eager = frame.select(pq.least_squares("y", FEATURES).alias("fit")).unnest("fit")
+    lazy = frame.lazy().select(pq.least_squares("y", FEATURES).alias("fit")).unnest("fit").collect()
 
     assert eager.equals(lazy)
 
@@ -71,7 +71,7 @@ def test_nulls_are_rejected_by_default(frame):
     )
 
     with pytest.raises(pl.exceptions.ComputeError, match="null or non-finite"):
-        with_null.select(pf.least_squares("y", FEATURES))
+        with_null.select(pq.least_squares("y", FEATURES))
 
 
 def test_dropping_nulls_fits_the_remaining_rows(frame):
@@ -79,7 +79,7 @@ def test_dropping_nulls_fits_the_remaining_rows(frame):
         pl.when(pl.arange(0, frame.height) == 3).then(None).otherwise(pl.col("a")).alias("a")
     )
 
-    out = with_null.select(pf.least_squares("y", FEATURES, null_policy="drop").alias("fit")).unnest(
+    out = with_null.select(pq.least_squares("y", FEATURES, null_policy="drop").alias("fit")).unnest(
         "fit"
     )
 
@@ -94,11 +94,11 @@ def test_a_non_numeric_column_is_rejected(frame):
 
     # Polars reports every failure raised inside a plugin as a compute error.
     with pytest.raises(pl.exceptions.ComputeError, match="not numeric"):
-        labelled.select(pf.least_squares("y", ["a", "label"]))
+        labelled.select(pq.least_squares("y", ["a", "label"]))
 
 
 def test_several_targets_share_one_feature_matrix(frame):
-    out = frame.select(pf.least_squares(["y", "z"], FEATURES).alias("fit")).unnest("fit")
+    out = frame.select(pq.least_squares(["y", "z"], FEATURES).alias("fit")).unnest("fit")
 
     x = frame.select(FEATURES).to_numpy()
     expected = np.linalg.lstsq(x, frame.select(["y", "z"]).to_numpy(), rcond=None)[0]
@@ -107,9 +107,9 @@ def test_several_targets_share_one_feature_matrix(frame):
 
 
 def test_fitting_targets_together_matches_fitting_them_apart(frame):
-    together = frame.select(pf.least_squares(["y", "z"], FEATURES).alias("fit")).unnest("fit")
+    together = frame.select(pq.least_squares(["y", "z"], FEATURES).alias("fit")).unnest("fit")
     apart = [
-        frame.select(pf.least_squares(target, FEATURES).alias("fit")).unnest("fit")
+        frame.select(pq.least_squares(target, FEATURES).alias("fit")).unnest("fit")
         for target in ("y", "z")
     ]
 
@@ -133,7 +133,7 @@ def weighted_reference(frame, features=FEATURES, target="y", weight="weight"):
 
 
 def test_weights_reproduce_a_scaled_solve(frame):
-    out = frame.select(pf.least_squares("y", FEATURES, weights="weight").alias("fit")).unnest("fit")
+    out = frame.select(pq.least_squares("y", FEATURES, weights="weight").alias("fit")).unnest("fit")
 
     coefficients, residuals, _, _ = weighted_reference(frame)
     assert np.allclose(out["coefficients"][0].to_list()[0], coefficients)
@@ -141,10 +141,10 @@ def test_weights_reproduce_a_scaled_solve(frame):
 
 
 def test_equal_weights_leave_the_fit_unchanged(frame):
-    unweighted = frame.select(pf.least_squares("y", FEATURES).alias("fit")).unnest("fit")
+    unweighted = frame.select(pq.least_squares("y", FEATURES).alias("fit")).unnest("fit")
     weighted = (
         frame.with_columns(pl.lit(2.0).alias("w"))
-        .select(pf.least_squares("y", FEATURES, weights="w").alias("fit"))
+        .select(pq.least_squares("y", FEATURES, weights="w").alias("fit"))
         .unnest("fit")
     )
 
@@ -159,7 +159,7 @@ def test_a_zero_weight_drops_an_observation_from_the_fit(frame):
         pl.when(pl.arange(0, frame.height) < 5).then(0.0).otherwise(1.0).alias("w")
     )
 
-    out = zeroed.select(pf.least_squares("y", FEATURES, weights="w").alias("fit")).unnest("fit")
+    out = zeroed.select(pq.least_squares("y", FEATURES, weights="w").alias("fit")).unnest("fit")
 
     kept = frame.filter(pl.arange(0, frame.height) >= 5)
     coefficients, _, _, _ = reference(kept)
@@ -173,24 +173,24 @@ def test_a_negative_weight_is_rejected(frame):
     )
 
     with pytest.raises(pl.exceptions.ComputeError, match="negative weight"):
-        negative.select(pf.least_squares("y", FEATURES, weights="w"))
+        negative.select(pq.least_squares("y", FEATURES, weights="w"))
 
 
 def test_weights_that_are_all_zero_are_rejected(frame):
     zeroed = frame.with_columns(pl.lit(0.0).alias("w"))
 
     with pytest.raises(pl.exceptions.ComputeError, match="no observation carries any weight"):
-        zeroed.select(pf.least_squares("y", FEATURES, weights="w"))
+        zeroed.select(pq.least_squares("y", FEATURES, weights="w"))
 
 
 def test_no_intercept_is_fitted_by_default(frame):
-    out = frame.select(pf.least_squares("y", FEATURES).alias("fit")).unnest("fit")
+    out = frame.select(pq.least_squares("y", FEATURES).alias("fit")).unnest("fit")
 
     assert out["intercept"][0] is None
 
 
 def test_an_intercept_matches_an_explicit_constant_column(frame):
-    out = frame.select(pf.least_squares("y", FEATURES, intercept=True).alias("fit")).unnest("fit")
+    out = frame.select(pq.least_squares("y", FEATURES, intercept=True).alias("fit")).unnest("fit")
 
     x = np.column_stack([np.ones(frame.height), frame.select(FEATURES).to_numpy()])
     expected = np.linalg.lstsq(x, frame["y"].to_numpy(), rcond=None)[0]
@@ -202,11 +202,11 @@ def test_an_intercept_matches_an_explicit_constant_column(frame):
 def test_an_intercept_absorbs_a_shifted_target(frame):
     shifted = frame.with_columns((pl.col("y") + 10.0).alias("shifted"))
 
-    plain = shifted.select(pf.least_squares("y", FEATURES, intercept=True).alias("fit")).unnest(
+    plain = shifted.select(pq.least_squares("y", FEATURES, intercept=True).alias("fit")).unnest(
         "fit"
     )
     moved = shifted.select(
-        pf.least_squares("shifted", FEATURES, intercept=True).alias("fit")
+        pq.least_squares("shifted", FEATURES, intercept=True).alias("fit")
     ).unnest("fit")
 
     assert np.allclose(plain["coefficients"][0].to_list(), moved["coefficients"][0].to_list())
@@ -217,7 +217,7 @@ def test_an_intercept_absorbs_a_shifted_target(frame):
 
 def test_a_weighted_intercept_matches_a_scaled_solve(frame):
     out = frame.select(
-        pf.least_squares("y", FEATURES, weights="weight", intercept=True).alias("fit")
+        pq.least_squares("y", FEATURES, weights="weight", intercept=True).alias("fit")
     ).unnest("fit")
 
     root = np.sqrt(frame["weight"].to_numpy())
@@ -228,8 +228,8 @@ def test_a_weighted_intercept_matches_a_scaled_solve(frame):
 
 
 def test_the_two_solvers_agree_on_a_well_posed_system(frame):
-    by_qr = frame.select(pf.least_squares("y", FEATURES).alias("fit")).unnest("fit")
-    by_svd = frame.select(pf.least_squares("y", FEATURES, solver="svd").alias("fit")).unnest("fit")
+    by_qr = frame.select(pq.least_squares("y", FEATURES).alias("fit")).unnest("fit")
+    by_svd = frame.select(pq.least_squares("y", FEATURES, solver="svd").alias("fit")).unnest("fit")
 
     assert np.allclose(by_qr["coefficients"][0].to_list(), by_svd["coefficients"][0].to_list())
     assert np.allclose(
@@ -242,7 +242,7 @@ def test_an_svd_solve_matches_the_reference_on_a_duplicated_feature(frame):
     duplicated = frame.with_columns(pl.col("a").alias("a_again"))
     columns = [*FEATURES, "a_again"]
 
-    out = duplicated.select(pf.least_squares("y", columns, solver="svd").alias("fit")).unnest("fit")
+    out = duplicated.select(pq.least_squares("y", columns, solver="svd").alias("fit")).unnest("fit")
 
     x = duplicated.select(columns).to_numpy()
     expected = np.linalg.lstsq(x, duplicated["y"].to_numpy(), rcond=None)[0]
@@ -253,7 +253,7 @@ def test_an_svd_solve_handles_more_features_than_rows(rng):
     narrow = pl.DataFrame({name: rng.normal(size=3) for name in ("y", "a", "b", "c", "d", "e")})
 
     out = narrow.select(
-        pf.least_squares("y", ["a", "b", "c", "d", "e"], solver="svd").alias("fit")
+        pq.least_squares("y", ["a", "b", "c", "d", "e"], solver="svd").alias("fit")
     ).unnest("fit")
 
     x = narrow.select(["a", "b", "c", "d", "e"]).to_numpy()
@@ -266,11 +266,11 @@ def test_a_qr_solve_refuses_an_underdetermined_system(rng):
     narrow = pl.DataFrame({name: rng.normal(size=3) for name in ("y", "a", "b", "c", "d")})
 
     with pytest.raises(pl.exceptions.ComputeError, match="at least as many observations"):
-        narrow.select(pf.least_squares("y", ["a", "b", "c", "d"]))
+        narrow.select(pq.least_squares("y", ["a", "b", "c", "d"]))
 
 
 def test_a_full_rank_fit_reports_its_rank_and_solver(frame):
-    out = frame.select(pf.least_squares("y", FEATURES).alias("fit")).unnest("fit")
+    out = frame.select(pq.least_squares("y", FEATURES).alias("fit")).unnest("fit")
 
     assert out["rank"][0] == len(FEATURES)
     assert out["solver"][0] == "qr"
@@ -279,7 +279,7 @@ def test_a_full_rank_fit_reports_its_rank_and_solver(frame):
 
 
 def test_an_svd_fit_reports_the_singular_values(frame):
-    out = frame.select(pf.least_squares("y", FEATURES, solver="svd").alias("fit")).unnest("fit")
+    out = frame.select(pq.least_squares("y", FEATURES, solver="svd").alias("fit")).unnest("fit")
 
     x = frame.select(FEATURES).to_numpy()
     assert out["solver"][0] == "svd"
@@ -291,7 +291,7 @@ def test_a_dependent_feature_lowers_the_reported_rank(frame):
     dependent = frame.with_columns((pl.col("a") * 2.0).alias("twice_a"))
 
     out = dependent.select(
-        pf.least_squares("y", [*FEATURES, "twice_a"], solver="svd").alias("fit")
+        pq.least_squares("y", [*FEATURES, "twice_a"], solver="svd").alias("fit")
     ).unnest("fit")
 
     assert out["rank"][0] == len(FEATURES)
@@ -300,7 +300,7 @@ def test_a_dependent_feature_lowers_the_reported_rank(frame):
 
 def test_the_intercept_counts_towards_the_rank(frame):
     out = frame.select(
-        pf.least_squares("y", FEATURES, intercept=True, solver="svd").alias("fit")
+        pq.least_squares("y", FEATURES, intercept=True, solver="svd").alias("fit")
     ).unnest("fit")
 
     assert out["rank"][0] == len(FEATURES) + 1
@@ -310,7 +310,7 @@ def test_the_intercept_counts_towards_the_rank(frame):
 def test_a_penalty_matches_an_augmented_solve(frame):
     penalty = 5.0
 
-    out = frame.select(pf.least_squares("y", FEATURES, l2_penalty=penalty).alias("fit")).unnest(
+    out = frame.select(pq.least_squares("y", FEATURES, l2_penalty=penalty).alias("fit")).unnest(
         "fit"
     )
 
@@ -323,8 +323,8 @@ def test_a_penalty_matches_an_augmented_solve(frame):
 
 
 def test_a_penalty_shrinks_every_coefficient(frame):
-    plain = frame.select(pf.least_squares("y", FEATURES).alias("fit")).unnest("fit")
-    ridge = frame.select(pf.least_squares("y", FEATURES, l2_penalty=1e4).alias("fit")).unnest("fit")
+    plain = frame.select(pq.least_squares("y", FEATURES).alias("fit")).unnest("fit")
+    ridge = frame.select(pq.least_squares("y", FEATURES, l2_penalty=1e4).alias("fit")).unnest("fit")
 
     plain_norm = np.linalg.norm(plain["coefficients"][0].to_list()[0])
     ridge_norm = np.linalg.norm(ridge["coefficients"][0].to_list()[0])
@@ -332,8 +332,8 @@ def test_a_penalty_shrinks_every_coefficient(frame):
 
 
 def test_a_zero_penalty_changes_nothing(frame):
-    without = frame.select(pf.least_squares("y", FEATURES).alias("fit")).unnest("fit")
-    with_zero = frame.select(pf.least_squares("y", FEATURES, l2_penalty=0.0).alias("fit")).unnest(
+    without = frame.select(pq.least_squares("y", FEATURES).alias("fit")).unnest("fit")
+    with_zero = frame.select(pq.least_squares("y", FEATURES, l2_penalty=0.0).alias("fit")).unnest(
         "fit"
     )
 

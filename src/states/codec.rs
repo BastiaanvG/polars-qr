@@ -8,7 +8,7 @@
 use polars::prelude::*;
 
 /// Marks a blob as one of ours.
-const MAGIC: [u8; 5] = *b"PFAER";
+const MAGIC: [u8; 5] = *b"POLQR";
 
 /// The version of the layout. A reader refuses anything it does not know.
 pub const FORMAT_VERSION: u16 = 1;
@@ -160,7 +160,7 @@ impl<'a> Reader<'a> {
     /// Open a state, checking that it is one of ours and of the kind that was expected.
     pub fn new(bytes: &'a [u8], expected: Kind) -> PolarsResult<Self> {
         if bytes.len() < 16 || bytes[..5] != MAGIC {
-            polars_bail!(ComputeError: "this is not a polars-faer state");
+            polars_bail!(ComputeError: "this is not a polars-qr state");
         }
         let kind = Kind::from_byte(bytes[5])
             .ok_or_else(|| polars_err!(ComputeError: "unknown state kind {}", bytes[5]))?;

@@ -3,7 +3,7 @@
 import numpy as np
 import polars as pl
 
-import polars_faer as pf
+import polars_qr as pq
 
 rng = np.random.default_rng(4)
 n = 2000
@@ -23,7 +23,7 @@ frame = pl.DataFrame(
 states = (
     frame.lazy()
     .group_by("partition")
-    .agg(pf.least_squares_state("target", columns).alias("state"))
+    .agg(pq.least_squares_state("target", columns).alias("state"))
     .collect()
 )
 print("partitions:", states.height)
@@ -33,12 +33,12 @@ print("rows behind each:", frame.group_by("partition").len()["len"].to_list())
 # Merging them and finalising gives what a fit over every row gives.
 through = (
     states.lazy()
-    .select(pf.merge_least_squares_states("state").alias("state"))
-    .select(pf.finalise_least_squares("state").alias("fit"))
+    .select(pq.merge_least_squares_states("state").alias("state"))
+    .select(pq.finalise_least_squares("state").alias("fit"))
     .unnest("fit")
     .collect()
 )
-direct = frame.select(pf.least_squares("target", columns).alias("fit")).unnest("fit")
+direct = frame.select(pq.least_squares("target", columns).alias("fit")).unnest("fit")
 print("\nthrough states:", np.round(through["coefficients"][0].to_list()[0], 6))
 print("in one pass:   ", np.round(direct["coefficients"][0].to_list()[0], 6))
 print("observations:  ", through["n_observations"][0])
@@ -46,8 +46,8 @@ print("observations:  ", through["n_observations"][0])
 # The same summaries can be finalised more than one way.
 ridge = (
     states.lazy()
-    .select(pf.merge_least_squares_states("state").alias("state"))
-    .select(pf.finalise_least_squares("state", l2_penalty=500.0).alias("fit"))
+    .select(pq.merge_least_squares_states("state").alias("state"))
+    .select(pq.finalise_least_squares("state", l2_penalty=500.0).alias("fit"))
     .unnest("fit")
     .collect()
 )
@@ -57,14 +57,14 @@ print("under a penalty:", np.round(ridge["coefficients"][0].to_list()[0], 6))
 moments = (
     frame.lazy()
     .group_by("partition")
-    .agg(pf.covariance_state(columns).alias("state"))
-    .select(pf.merge_covariance_states("state").alias("state"))
+    .agg(pq.covariance_state(columns).alias("state"))
+    .select(pq.merge_covariance_states("state").alias("state"))
 )
-covariance = moments.select(pf.finalise_covariance("state").alias("cov")).unnest("cov").collect()
+covariance = moments.select(pq.finalise_covariance("state").alias("cov")).unnest("cov").collect()
 correlation = (
-    moments.select(pf.finalise_correlation("state").alias("corr")).unnest("corr").collect()
+    moments.select(pq.finalise_correlation("state").alias("corr")).unnest("corr").collect()
 )
-components = moments.select(pf.finalise_pca("state").alias("pca")).unnest("pca").collect()
+components = moments.select(pq.finalise_pca("state").alias("pca")).unnest("pca").collect()
 
 print("\ncovariance:\n", np.round(np.array(covariance["covariance"][0].to_list()), 4))
 print("correlation:\n", np.round(np.array(correlation["correlation"][0].to_list()), 4))

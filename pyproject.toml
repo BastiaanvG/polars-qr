@@ -3,7 +3,7 @@ requires = ["maturin>=1.9,<2"]
 build-backend = "maturin"
 
 [project]
-name = "polars-faer"
+name = "polars-qr"
 description = "Dense numerical operations for Polars, backed by faer."
 readme = "README.md"
 license = "BSD-3-Clause"
@@ -25,13 +25,20 @@ dynamic = ["version"]
 
 [tool.maturin]
 python-source = "python"
-module-name = "polars_faer._internal"
+module-name = "polars_qr._internal"
 features = ["pyo3/extension-module"]
 
 [dependency-groups]
-dev = [{ include-group = "lint" }, { include-group = "test" }]
+dev = [{ include-group = "lint" }, { include-group = "test" }, { include-group = "docs" }]
 lint = ["mypy>=1.18", "ruff>=0.14"]
 test = ["numpy>=2.3", "pytest>=8.4"]
+docs = [
+    # MkDocs 2.0 drops the plugin system with no migration path, which would take
+    # mkdocstrings and the Material theme with it.
+    "mkdocs>=1.6,<2",
+    "mkdocs-material>=9.5",
+    "mkdocstrings[python]>=0.27",
+]
 
 [tool.ruff]
 line-length = 100

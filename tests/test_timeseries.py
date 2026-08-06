@@ -4,7 +4,7 @@ import numpy as np
 import polars as pl
 import pytest
 
-import polars_faer as pf
+import polars_qr as pq
 import reference
 
 HALF_LIFE = 40.0
@@ -36,11 +36,8 @@ def assert_matches(got, want, tolerance=1e-9):
             assert abs(a - b) <= tolerance * max(1.0, abs(b)), f"row {row}: {a} != {b}"
 
 
-# --------------------------------------------------------------------- EWM
-
-
 def test_ewm_sum_matches_the_reference(series):
-    out = series.select(pf.timeseries.ewm_sum("x", clock="clock", half_life=HALF_LIFE).alias("out"))
+    out = series.select(pq.timeseries.ewm_sum("x", clock="clock", half_life=HALF_LIFE).alias("out"))
 
     want = reference.ewm_sum(values_of(series, "x"), values_of(series, "clock"), HALF_LIFE)
     assert_matches(out["out"].to_list(), want)
@@ -48,7 +45,7 @@ def test_ewm_sum_matches_the_reference(series):
 
 def test_ewm_sum_follows_its_recursion(series):
     out = series.select(
-        pf.timeseries.ewm_sum("x", clock="clock", half_life=HALF_LIFE).alias("out")
+        pq.timeseries.ewm_sum("x", clock="clock", half_life=HALF_LIFE).alias("out")
     )["out"].to_list()
 
     clock = values_of(series, "clock")
@@ -60,7 +57,7 @@ def test_ewm_sum_follows_its_recursion(series):
 
 def test_ewm_mean_is_the_sum_over_its_weight(series):
     out = series.select(
-        pf.timeseries.ewm_mean("x", clock="clock", half_life=HALF_LIFE).alias("out")
+        pq.timeseries.ewm_mean("x", clock="clock", half_life=HALF_LIFE).alias("out")
     )
 
     want = reference.ewm_mean(values_of(series, "x"), values_of(series, "clock"), HALF_LIFE)
@@ -70,7 +67,7 @@ def test_ewm_mean_is_the_sum_over_its_weight(series):
 def test_ewm_variance_matches_the_reference(series):
     for bias in (False, True):
         out = series.select(
-            pf.timeseries.ewm_variance("x", clock="clock", half_life=HALF_LIFE, bias=bias).alias(
+            pq.timeseries.ewm_variance("x", clock="clock", half_life=HALF_LIFE, bias=bias).alias(
                 "out"
             )
         )
@@ -84,7 +81,7 @@ def test_ewm_variance_matches_the_reference(series):
 def test_ewm_covariance_matches_the_reference(series):
     for bias in (False, True):
         out = series.select(
-            pf.timeseries.ewm_covariance(
+            pq.timeseries.ewm_covariance(
                 "x", "y", clock="clock", half_life=HALF_LIFE, bias=bias
             ).alias("out")
         )
@@ -101,7 +98,7 @@ def test_ewm_covariance_matches_the_reference(series):
 
 def test_ewm_correlation_matches_the_reference(series):
     out = series.select(
-        pf.timeseries.ewm_correlation("x", "y", clock="clock", half_life=HALF_LIFE).alias("out")
+        pq.timeseries.ewm_correlation("x", "y", clock="clock", half_life=HALF_LIFE).alias("out")
     )
 
     want = reference.ewm_correlation(
@@ -115,7 +112,7 @@ def test_ewm_correlation_matches_the_reference(series):
 
 def test_ewm_correlation_stays_within_its_range(series):
     out = series.select(
-        pf.timeseries.ewm_correlation("x", "y", clock="clock", half_life=HALF_LIFE).alias("out")
+        pq.timeseries.ewm_correlation("x", "y", clock="clock", half_life=HALF_LIFE).alias("out")
     )["out"].to_list()
 
     assert all(-1.0 <= value <= 1.0 for value in out if value is not None)
@@ -124,7 +121,7 @@ def test_ewm_correlation_stays_within_its_range(series):
 def test_a_variance_clock_of_zero_distance_does_not_decay():
     frame = pl.DataFrame({"clock": [5, 5, 5], "x": [1.0, 2.0, 3.0]})
 
-    out = frame.select(pf.timeseries.ewm_sum("x", clock="clock", half_life=10.0).alias("out"))
+    out = frame.select(pq.timeseries.ewm_sum("x", clock="clock", half_life=10.0).alias("out"))
 
     # Nothing decays when the clock does not move, so this is the plain running sum.
     assert out["out"].to_list() == [1.0, 3.0, 6.0]
@@ -133,7 +130,7 @@ def test_a_variance_clock_of_zero_distance_does_not_decay():
 def test_a_gap_wide_enough_forgets_what_came_before():
     frame = pl.DataFrame({"clock": [0, 10_000], "x": [100.0, 1.0]})
 
-    out = frame.select(pf.timeseries.ewm_sum("x", clock="clock", half_life=1.0).alias("out"))
+    out = frame.select(pq.timeseries.ewm_sum("x", clock="clock", half_life=1.0).alias("out"))
 
     assert out["out"].to_list() == [100.0, 1.0]
 
@@ -141,23 +138,20 @@ def test_a_gap_wide_enough_forgets_what_came_before():
 def test_one_half_life_halves_what_came_before():
     frame = pl.DataFrame({"clock": [0, 10], "x": [8.0, 0.0]})
 
-    out = frame.select(pf.timeseries.ewm_sum("x", clock="clock", half_life=10.0).alias("out"))
+    out = frame.select(pq.timeseries.ewm_sum("x", clock="clock", half_life=10.0).alias("out"))
 
     assert out["out"].to_list() == pytest.approx([8.0, 4.0])
 
 
-# ----------------------------------------------------------------- rolling
-
-
 def test_rolling_sum_matches_the_reference(series):
-    out = series.select(pf.timeseries.rolling_sum("x", clock="clock", window=WINDOW).alias("out"))
+    out = series.select(pq.timeseries.rolling_sum("x", clock="clock", window=WINDOW).alias("out"))
 
     want = reference.rolling_sum(values_of(series, "x"), values_of(series, "clock"), WINDOW)
     assert_matches(out["out"].to_list(), want)
 
 
 def test_rolling_mean_matches_the_reference(series):
-    out = series.select(pf.timeseries.rolling_mean("x", clock="clock", window=WINDOW).alias("out"))
+    out = series.select(pq.timeseries.rolling_mean("x", clock="clock", window=WINDOW).alias("out"))
 
     want = reference.rolling_mean(values_of(series, "x"), values_of(series, "clock"), WINDOW)
     assert_matches(out["out"].to_list(), want)
@@ -166,7 +160,7 @@ def test_rolling_mean_matches_the_reference(series):
 def test_rolling_variance_matches_the_reference(series):
     for ddof in (0, 1):
         out = series.select(
-            pf.timeseries.rolling_variance("x", clock="clock", window=WINDOW, ddof=ddof).alias(
+            pq.timeseries.rolling_variance("x", clock="clock", window=WINDOW, ddof=ddof).alias(
                 "out"
             )
         )
@@ -179,7 +173,7 @@ def test_rolling_variance_matches_the_reference(series):
 
 def test_rolling_covariance_matches_the_reference(series):
     out = series.select(
-        pf.timeseries.rolling_covariance("x", "y", clock="clock", window=WINDOW).alias("out")
+        pq.timeseries.rolling_covariance("x", "y", clock="clock", window=WINDOW).alias("out")
     )
 
     want = reference.rolling_covariance(
@@ -190,7 +184,7 @@ def test_rolling_covariance_matches_the_reference(series):
 
 def test_rolling_correlation_matches_the_reference(series):
     out = series.select(
-        pf.timeseries.rolling_correlation("x", "y", clock="clock", window=WINDOW).alias("out")
+        pq.timeseries.rolling_correlation("x", "y", clock="clock", window=WINDOW).alias("out")
     )
 
     want = reference.rolling_correlation(
@@ -203,7 +197,7 @@ def test_the_window_is_open_at_the_far_end_and_closed_at_the_near_one():
     # With a window of 10 the row at clock 10 sees clock 1 through 10, not clock 0.
     frame = pl.DataFrame({"clock": [0, 1, 10], "x": [1.0, 2.0, 4.0]})
 
-    out = frame.select(pf.timeseries.rolling_sum("x", clock="clock", window=10).alias("out"))
+    out = frame.select(pq.timeseries.rolling_sum("x", clock="clock", window=10).alias("out"))
 
     assert out["out"].to_list() == [1.0, 3.0, 6.0]
 
@@ -211,7 +205,7 @@ def test_the_window_is_open_at_the_far_end_and_closed_at_the_near_one():
 def test_rows_sharing_a_clock_value_are_all_visible():
     frame = pl.DataFrame({"clock": [0, 0, 0], "x": [1.0, 2.0, 3.0]})
 
-    out = frame.select(pf.timeseries.rolling_sum("x", clock="clock", window=1).alias("out"))
+    out = frame.select(pq.timeseries.rolling_sum("x", clock="clock", window=1).alias("out"))
 
     # Earlier rows at the same clock are in; later ones are not yet.
     assert out["out"].to_list() == [1.0, 3.0, 6.0]
@@ -219,7 +213,7 @@ def test_rows_sharing_a_clock_value_are_all_visible():
 
 def test_min_samples_holds_the_result_back(series):
     out = series.select(
-        pf.timeseries.rolling_mean("x", clock="clock", window=WINDOW, min_samples=5).alias("out")
+        pq.timeseries.rolling_mean("x", clock="clock", window=WINDOW, min_samples=5).alias("out")
     )
 
     want = reference.rolling_mean(
@@ -231,7 +225,7 @@ def test_min_samples_holds_the_result_back(series):
 
 def test_min_clock_span_holds_the_result_back(series):
     out = series.select(
-        pf.timeseries.rolling_variance("x", clock="clock", window=WINDOW, min_clock_span=60).alias(
+        pq.timeseries.rolling_variance("x", clock="clock", window=WINDOW, min_clock_span=60).alias(
             "out"
         )
     )
@@ -244,16 +238,13 @@ def test_min_clock_span_holds_the_result_back(series):
 
 def test_a_minimum_span_wider_than_the_window_is_rejected(series):
     with pytest.raises(pl.exceptions.ComputeError, match=r"min_clock_span <= window"):
-        series.select(pf.timeseries.rolling_sum("x", clock="clock", window=10, min_clock_span=20))
-
-
-# ------------------------------------------------------------------ clocks
+        series.select(pq.timeseries.rolling_sum("x", clock="clock", window=10, min_clock_span=20))
 
 
 def test_a_float_clock_is_read_in_its_own_units():
     frame = pl.DataFrame({"clock": [0.0, 0.5, 1.5], "x": [1.0, 1.0, 1.0]})
 
-    out = frame.select(pf.timeseries.rolling_sum("x", clock="clock", window=1.0).alias("out"))
+    out = frame.select(pq.timeseries.rolling_sum("x", clock="clock", window=1.0).alias("out"))
 
     assert out["out"].to_list() == [1.0, 2.0, 1.0]
 
@@ -271,7 +262,7 @@ def test_a_datetime_clock_takes_a_duration():
     )
 
     out = frame.select(
-        pf.timeseries.rolling_sum("x", clock="clock", window=timedelta(hours=1)).alias("out")
+        pq.timeseries.rolling_sum("x", clock="clock", window=timedelta(hours=1)).alias("out")
     )
 
     assert out["out"].to_list() == [1.0, 2.0, 1.0]
@@ -283,7 +274,7 @@ def test_a_date_clock_counts_in_days():
     )
 
     out = frame.select(
-        pf.timeseries.rolling_sum("x", clock="clock", window=timedelta(days=3)).alias("out")
+        pq.timeseries.rolling_sum("x", clock="clock", window=timedelta(days=3)).alias("out")
     )
 
     assert out["out"].to_list() == [1.0, 2.0, 1.0]
@@ -293,58 +284,55 @@ def test_a_temporal_clock_refuses_a_number():
     frame = pl.DataFrame({"clock": [datetime(2026, 8, 6, 9, 0)], "x": [1.0]})
 
     with pytest.raises(pl.exceptions.ComputeError, match=r"Use datetime\.timedelta"):
-        frame.select(pf.timeseries.ewm_sum("x", clock="clock", half_life=5))
+        frame.select(pq.timeseries.ewm_sum("x", clock="clock", half_life=5))
 
 
 def test_a_numeric_clock_refuses_a_duration():
     frame = pl.DataFrame({"clock": [1, 2], "x": [1.0, 1.0]})
 
     with pytest.raises(pl.exceptions.ComputeError, match="Use a number in the units"):
-        frame.select(pf.timeseries.ewm_sum("x", clock="clock", half_life=timedelta(hours=1)))
+        frame.select(pq.timeseries.ewm_sum("x", clock="clock", half_life=timedelta(hours=1)))
 
 
 def test_a_clock_that_goes_backwards_is_rejected():
     frame = pl.DataFrame({"clock": [10, 20, 15], "x": [1.0, 1.0, 1.0]})
 
     with pytest.raises(pl.exceptions.ComputeError, match="non-decreasing clock"):
-        frame.select(pf.timeseries.ewm_sum("x", clock="clock", half_life=5))
+        frame.select(pq.timeseries.ewm_sum("x", clock="clock", half_life=5))
 
 
 def test_a_null_clock_is_rejected():
     frame = pl.DataFrame({"clock": [1, None, 3], "x": [1.0, 1.0, 1.0]})
 
     with pytest.raises(pl.exceptions.ComputeError, match="null clock"):
-        frame.select(pf.timeseries.ewm_sum("x", clock="clock", half_life=5))
+        frame.select(pq.timeseries.ewm_sum("x", clock="clock", half_life=5))
 
 
 def test_a_clock_that_is_not_finite_is_rejected():
     frame = pl.DataFrame({"clock": [1.0, float("nan")], "x": [1.0, 1.0]})
 
     with pytest.raises(pl.exceptions.ComputeError, match="not finite"):
-        frame.select(pf.timeseries.ewm_sum("x", clock="clock", half_life=5))
+        frame.select(pq.timeseries.ewm_sum("x", clock="clock", half_life=5))
 
 
 def test_a_clock_that_is_not_a_number_or_a_time_is_rejected():
     frame = pl.DataFrame({"clock": ["a", "b"], "x": [1.0, 1.0]})
 
     with pytest.raises(pl.exceptions.ComputeError, match=r"not numeric|must be an integer"):
-        frame.select(pf.timeseries.ewm_sum("x", clock="clock", half_life=5))
+        frame.select(pq.timeseries.ewm_sum("x", clock="clock", half_life=5))
 
 
 def test_a_half_life_must_be_positive():
     frame = pl.DataFrame({"clock": [1, 2], "x": [1.0, 1.0]})
 
     with pytest.raises(pl.exceptions.ComputeError, match=r"half_life > 0"):
-        frame.select(pf.timeseries.ewm_sum("x", clock="clock", half_life=0))
-
-
-# ------------------------------------------------------------------- nulls
+        frame.select(pq.timeseries.ewm_sum("x", clock="clock", half_life=0))
 
 
 def test_a_null_lets_the_state_decay_past_it():
     frame = pl.DataFrame({"clock": [0, 10, 20], "x": [8.0, None, 0.0]})
 
-    out = frame.select(pf.timeseries.ewm_sum("x", clock="clock", half_life=10.0).alias("out"))
+    out = frame.select(pq.timeseries.ewm_sum("x", clock="clock", half_life=10.0).alias("out"))
 
     # The clock still advances, so the first value has halved twice by the last row.
     assert out["out"].to_list() == pytest.approx([8.0, 4.0, 2.0])
@@ -354,14 +342,14 @@ def test_a_null_can_be_made_an_error():
     frame = pl.DataFrame({"clock": [0, 10], "x": [1.0, None]})
 
     with pytest.raises(pl.exceptions.ComputeError, match="null value"):
-        frame.select(pf.timeseries.ewm_sum("x", clock="clock", half_life=10.0, null_policy="raise"))
+        frame.select(pq.timeseries.ewm_sum("x", clock="clock", half_life=10.0, null_policy="raise"))
 
 
 def test_a_value_that_is_not_finite_is_always_an_error():
     frame = pl.DataFrame({"clock": [0, 10], "x": [1.0, float("inf")]})
 
     with pytest.raises(pl.exceptions.ComputeError, match="not finite"):
-        frame.select(pf.timeseries.ewm_sum("x", clock="clock", half_life=10.0))
+        frame.select(pq.timeseries.ewm_sum("x", clock="clock", half_life=10.0))
 
 
 def test_a_pair_enters_only_when_both_values_are_there(series):
@@ -370,7 +358,7 @@ def test_a_pair_enters_only_when_both_values_are_there(series):
     )
 
     out = holed.select(
-        pf.timeseries.ewm_covariance("x", "y", clock="clock", half_life=HALF_LIFE).alias("out")
+        pq.timeseries.ewm_covariance("x", "y", clock="clock", half_life=HALF_LIFE).alias("out")
     )
 
     want = reference.ewm_covariance(
@@ -387,21 +375,18 @@ def test_nulls_in_a_rolling_window_are_skipped(series):
         pl.when(pl.arange(0, series.height) % 5 == 0).then(None).otherwise(pl.col("x")).alias("x")
     )
 
-    out = holed.select(pf.timeseries.rolling_mean("x", clock="clock", window=WINDOW).alias("out"))
+    out = holed.select(pq.timeseries.rolling_mean("x", clock="clock", window=WINDOW).alias("out"))
 
     want = reference.rolling_mean(values_of(holed, "x"), values_of(holed, "clock"), WINDOW)
     assert_matches(out["out"].to_list(), want)
 
 
-# ------------------------------------------------------------- integration
-
-
 def test_every_operation_keeps_one_row_per_input_row(series):
     out = series.select(
-        pf.timeseries.ewm_sum("x", clock="clock", half_life=HALF_LIFE).alias("a"),
-        pf.timeseries.ewm_correlation("x", "y", clock="clock", half_life=HALF_LIFE).alias("b"),
-        pf.timeseries.rolling_variance("x", clock="clock", window=WINDOW).alias("c"),
-        pf.timeseries.rolling_covariance("x", "y", clock="clock", window=WINDOW).alias("d"),
+        pq.timeseries.ewm_sum("x", clock="clock", half_life=HALF_LIFE).alias("a"),
+        pq.timeseries.ewm_correlation("x", "y", clock="clock", half_life=HALF_LIFE).alias("b"),
+        pq.timeseries.rolling_variance("x", clock="clock", window=WINDOW).alias("c"),
+        pq.timeseries.rolling_covariance("x", "y", clock="clock", window=WINDOW).alias("d"),
     )
 
     assert out.height == series.height
@@ -414,7 +399,7 @@ def test_a_group_is_computed_on_its_own_rows(series, rng):
     )
 
     out = grouped.with_columns(
-        pf.timeseries.ewm_sum("x", clock="clock", half_life=HALF_LIFE).over("symbol").alias("out")
+        pq.timeseries.ewm_sum("x", clock="clock", half_life=HALF_LIFE).over("symbol").alias("out")
     )
 
     for symbol in out["symbol"].unique():
@@ -429,14 +414,14 @@ def test_a_group_matches_running_that_group_on_its_own(series, rng):
     )
 
     together = grouped.with_columns(
-        pf.timeseries.rolling_correlation("x", "y", clock="clock", window=WINDOW)
+        pq.timeseries.rolling_correlation("x", "y", clock="clock", window=WINDOW)
         .over("symbol")
         .alias("out")
     )
     apart = pl.concat(
         [
             grouped.filter(pl.col("symbol") == symbol).with_columns(
-                pf.timeseries.rolling_correlation("x", "y", clock="clock", window=WINDOW).alias(
+                pq.timeseries.rolling_correlation("x", "y", clock="clock", window=WINDOW).alias(
                     "out"
                 )
             )
@@ -449,11 +434,11 @@ def test_a_group_matches_running_that_group_on_its_own(series, rng):
 
 def test_a_lazy_query_gives_the_same_answer(series):
     eager = series.select(
-        pf.timeseries.ewm_variance("x", clock="clock", half_life=HALF_LIFE).alias("out")
+        pq.timeseries.ewm_variance("x", clock="clock", half_life=HALF_LIFE).alias("out")
     )
     lazy = (
         series.lazy()
-        .select(pf.timeseries.ewm_variance("x", clock="clock", half_life=HALF_LIFE).alias("out"))
+        .select(pq.timeseries.ewm_variance("x", clock="clock", half_life=HALF_LIFE).alias("out"))
         .collect()
     )
 
@@ -463,7 +448,7 @@ def test_a_lazy_query_gives_the_same_answer(series):
 def test_the_schema_is_known_without_collecting(series):
     schema = (
         series.lazy()
-        .select(pf.timeseries.ewm_sum("x", clock="clock", half_life=HALF_LIFE).alias("out"))
+        .select(pq.timeseries.ewm_sum("x", clock="clock", half_life=HALF_LIFE).alias("out"))
         .collect_schema()
     )
 
@@ -474,28 +459,25 @@ def test_chunked_input_gives_the_same_answer(series):
     chunked = pl.concat([series.head(100), series.slice(100, 100), series.tail(100)], rechunk=False)
 
     out = chunked.select(
-        pf.timeseries.ewm_mean("x", clock="clock", half_life=HALF_LIFE).alias("out")
+        pq.timeseries.ewm_mean("x", clock="clock", half_life=HALF_LIFE).alias("out")
     )
     want = series.rechunk().select(
-        pf.timeseries.ewm_mean("x", clock="clock", half_life=HALF_LIFE).alias("out")
+        pq.timeseries.ewm_mean("x", clock="clock", half_life=HALF_LIFE).alias("out")
     )
 
     assert_matches(out["out"].to_list(), want["out"].to_list())
-
-
-# -------------------------------------------------------------- properties
 
 
 def test_shifting_the_values_shifts_the_mean_and_leaves_the_spread(series):
     shifted = series.with_columns((pl.col("x") + 100.0).alias("x"))
 
     plain = series.select(
-        pf.timeseries.ewm_mean("x", clock="clock", half_life=HALF_LIFE).alias("mean"),
-        pf.timeseries.ewm_variance("x", clock="clock", half_life=HALF_LIFE).alias("variance"),
+        pq.timeseries.ewm_mean("x", clock="clock", half_life=HALF_LIFE).alias("mean"),
+        pq.timeseries.ewm_variance("x", clock="clock", half_life=HALF_LIFE).alias("variance"),
     )
     moved = shifted.select(
-        pf.timeseries.ewm_mean("x", clock="clock", half_life=HALF_LIFE).alias("mean"),
-        pf.timeseries.ewm_variance("x", clock="clock", half_life=HALF_LIFE).alias("variance"),
+        pq.timeseries.ewm_mean("x", clock="clock", half_life=HALF_LIFE).alias("mean"),
+        pq.timeseries.ewm_variance("x", clock="clock", half_life=HALF_LIFE).alias("variance"),
     )
 
     assert_matches(
@@ -508,14 +490,14 @@ def test_scaling_the_values_scales_the_moments(series):
     scaled = series.with_columns((pl.col("x") * 3.0).alias("x"))
 
     plain = series.select(
-        pf.timeseries.ewm_variance("x", clock="clock", half_life=HALF_LIFE).alias("variance"),
-        pf.timeseries.ewm_covariance("x", "y", clock="clock", half_life=HALF_LIFE).alias("cov"),
-        pf.timeseries.ewm_correlation("x", "y", clock="clock", half_life=HALF_LIFE).alias("corr"),
+        pq.timeseries.ewm_variance("x", clock="clock", half_life=HALF_LIFE).alias("variance"),
+        pq.timeseries.ewm_covariance("x", "y", clock="clock", half_life=HALF_LIFE).alias("cov"),
+        pq.timeseries.ewm_correlation("x", "y", clock="clock", half_life=HALF_LIFE).alias("corr"),
     )
     bigger = scaled.select(
-        pf.timeseries.ewm_variance("x", clock="clock", half_life=HALF_LIFE).alias("variance"),
-        pf.timeseries.ewm_covariance("x", "y", clock="clock", half_life=HALF_LIFE).alias("cov"),
-        pf.timeseries.ewm_correlation("x", "y", clock="clock", half_life=HALF_LIFE).alias("corr"),
+        pq.timeseries.ewm_variance("x", clock="clock", half_life=HALF_LIFE).alias("variance"),
+        pq.timeseries.ewm_covariance("x", "y", clock="clock", half_life=HALF_LIFE).alias("cov"),
+        pq.timeseries.ewm_correlation("x", "y", clock="clock", half_life=HALF_LIFE).alias("corr"),
     )
 
     assert_matches(
@@ -531,8 +513,8 @@ def test_scaling_the_values_scales_the_moments(series):
 
 def test_a_column_correlates_perfectly_with_itself(series):
     out = series.select(
-        pf.timeseries.ewm_correlation("x", "x", clock="clock", half_life=HALF_LIFE).alias("out"),
-        pf.timeseries.rolling_correlation("x", "x", clock="clock", window=WINDOW).alias("rolling"),
+        pq.timeseries.ewm_correlation("x", "x", clock="clock", half_life=HALF_LIFE).alias("out"),
+        pq.timeseries.rolling_correlation("x", "x", clock="clock", window=WINDOW).alias("rolling"),
     )
 
     for column in ("out", "rolling"):
@@ -543,10 +525,10 @@ def test_a_column_correlates_perfectly_with_itself(series):
 
 def test_covariance_does_not_depend_on_which_column_is_which(series):
     one = series.select(
-        pf.timeseries.ewm_covariance("x", "y", clock="clock", half_life=HALF_LIFE).alias("out")
+        pq.timeseries.ewm_covariance("x", "y", clock="clock", half_life=HALF_LIFE).alias("out")
     )
     other = series.select(
-        pf.timeseries.ewm_covariance("y", "x", clock="clock", half_life=HALF_LIFE).alias("out")
+        pq.timeseries.ewm_covariance("y", "x", clock="clock", half_life=HALF_LIFE).alias("out")
     )
 
     assert_matches(one["out"].to_list(), other["out"].to_list())
@@ -554,10 +536,10 @@ def test_covariance_does_not_depend_on_which_column_is_which(series):
 
 def test_covariance_with_itself_is_its_variance(series):
     covariance = series.select(
-        pf.timeseries.ewm_covariance("x", "x", clock="clock", half_life=HALF_LIFE).alias("out")
+        pq.timeseries.ewm_covariance("x", "x", clock="clock", half_life=HALF_LIFE).alias("out")
     )
     variance = series.select(
-        pf.timeseries.ewm_variance("x", clock="clock", half_life=HALF_LIFE).alias("out")
+        pq.timeseries.ewm_variance("x", clock="clock", half_life=HALF_LIFE).alias("out")
     )
 
     assert_matches(covariance["out"].to_list(), variance["out"].to_list())
@@ -567,24 +549,21 @@ def test_large_offsets_do_not_swamp_a_small_spread(series):
     offset = series.with_columns((pl.col("x") + 1e9).alias("x"), (pl.col("y") + 1e9).alias("y"))
 
     plain = series.select(
-        pf.timeseries.rolling_covariance("x", "y", clock="clock", window=WINDOW).alias("out")
+        pq.timeseries.rolling_covariance("x", "y", clock="clock", window=WINDOW).alias("out")
     )
     shifted = offset.select(
-        pf.timeseries.rolling_covariance("x", "y", clock="clock", window=WINDOW).alias("out")
+        pq.timeseries.rolling_covariance("x", "y", clock="clock", window=WINDOW).alias("out")
     )
 
     assert_matches(shifted["out"].to_list(), plain["out"].to_list(), 1e-6)
 
 
-# -------------------------------------------------------------- namespace
-
-
 def test_the_expression_namespace_matches_the_function(series):
     through_function = series.select(
-        pf.timeseries.ewm_correlation("x", "y", clock="clock", half_life=HALF_LIFE).alias("out")
+        pq.timeseries.ewm_correlation("x", "y", clock="clock", half_life=HALF_LIFE).alias("out")
     )
     through_namespace = series.select(
-        pl.col("x").faer.ewm_correlation("y", clock="clock", half_life=HALF_LIFE).alias("out")  # type: ignore[attr-defined]
+        pl.col("x").qr.ewm_correlation("y", clock="clock", half_life=HALF_LIFE).alias("out")  # type: ignore[attr-defined]
     )
 
     assert through_function.equals(through_namespace)
@@ -603,10 +582,10 @@ def test_the_expression_namespace_matches_the_function(series):
 )
 def test_every_univariate_namespace_method_matches_its_function(series, method, arguments):
     through_function = series.select(
-        getattr(pf.timeseries, method)("x", clock="clock", **arguments).alias("out")
+        getattr(pq.timeseries, method)("x", clock="clock", **arguments).alias("out")
     )
     through_namespace = series.select(
-        getattr(pl.col("x").faer, method)(clock="clock", **arguments).alias("out")  # type: ignore[attr-defined]
+        getattr(pl.col("x").qr, method)(clock="clock", **arguments).alias("out")  # type: ignore[attr-defined]
     )
 
     assert through_function.equals(through_namespace)
@@ -623,10 +602,10 @@ def test_every_univariate_namespace_method_matches_its_function(series, method, 
 )
 def test_every_bivariate_namespace_method_matches_its_function(series, method, arguments):
     through_function = series.select(
-        getattr(pf.timeseries, method)("x", "y", clock="clock", **arguments).alias("out")
+        getattr(pq.timeseries, method)("x", "y", clock="clock", **arguments).alias("out")
     )
     through_namespace = series.select(
-        getattr(pl.col("x").faer, method)("y", clock="clock", **arguments).alias("out")  # type: ignore[attr-defined]
+        getattr(pl.col("x").qr, method)("y", clock="clock", **arguments).alias("out")  # type: ignore[attr-defined]
     )
 
     assert through_function.equals(through_namespace)

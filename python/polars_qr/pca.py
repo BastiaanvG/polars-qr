@@ -1,7 +1,7 @@
 import polars as pl
 
-from polars_faer._plugin import plugin_expr
-from polars_faer._typing import IntoExprColumns, NullPolicy, as_expressions, output_names
+from polars_qr._plugin import plugin_expr
+from polars_qr._typing import IntoExprColumns, NullPolicy, as_expressions, output_names
 
 __all__ = ["pca", "pca_transform"]
 

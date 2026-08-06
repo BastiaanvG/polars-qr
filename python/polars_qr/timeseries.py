@@ -15,8 +15,8 @@ from datetime import timedelta
 
 import polars as pl
 
-from polars_faer._plugin import plugin_expr
-from polars_faer._typing import ClockSpan, IntoExpr, TimeseriesNullPolicy, as_expressions
+from polars_qr._plugin import plugin_expr
+from polars_qr._typing import ClockSpan, IntoExpr, TimeseriesNullPolicy, as_expressions
 
 # How many value columns a statistic of a pair reads.
 PAIR = 2

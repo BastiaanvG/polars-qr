@@ -1,4 +1,4 @@
-# polars-faer
+# polars-qr
 
 Dense numerical operations for [Polars](https://pola.rs), backed by
 [faer](https://github.com/sarah-quinones/faer-rs).
@@ -6,19 +6,19 @@ Dense numerical operations for [Polars](https://pola.rs), backed by
 Some numerical work does not fit an elementwise expression: fitting several targets against
 one feature matrix, decomposing a block of columns, solving a covariance system. Writing
 those in Polars means leaving the query plan, materialising to NumPy, and putting the result
-back. polars-faer keeps them inside the plan.
+back. polars-qr keeps them inside the plan.
 
 The package is an expression plugin. Every operation is a Polars expression, so it composes
 with grouping, lazy execution and the rest of a query plan, and the numerics run in Rust.
 
 ```python
 import polars as pl
-import polars_faer as pf
+import polars_qr as pq
 
 fit = (
     frame.lazy()
     .group_by("date")
-    .agg(pf.least_squares("return", ["signal_a", "signal_b"], intercept=True).alias("fit"))
+    .agg(pq.least_squares("return", ["signal_a", "signal_b"], intercept=True).alias("fit"))
     .unnest("fit")
     .collect()
 )
@@ -27,34 +27,34 @@ fit = (
 ## Installing
 
 ```bash
-pip install polars-faer
+pip install polars-qr
 ```
 
 ## Operations
 
 | Operation | Returns |
 | --- | --- |
-| `pf.least_squares` | Coefficients per target, with rank, residuals and a condition estimate |
-| `pf.pca` | Loadings, singular values and explained variance |
-| `pf.pca_transform` | One score column per component, aligned with the input rows |
-| `pf.covariance` | A labelled covariance matrix with means and standard deviations |
-| `pf.correlation` | The same, divided through by the standard deviations |
-| `pf.solve_spd` | The solution of a positive-definite system, one per right-hand side |
+| `pq.least_squares` | Coefficients per target, with rank, residuals and a condition estimate |
+| `pq.pca` | Loadings, singular values and explained variance |
+| `pq.pca_transform` | One score column per component, aligned with the input rows |
+| `pq.covariance` | A labelled covariance matrix with means and standard deviations |
+| `pq.correlation` | The same, divided through by the standard deviations |
+| `pq.solve_spd` | The solution of a positive-definite system, one per right-hand side |
 
 Statistics measured against a clock of your own — cumulative volume, a trade count,
-cumulative squared return — live in `pf.timeseries` and are documented in
+cumulative squared return — live in `pq.timeseries` and are documented in
 [docs/timeseries.md](docs/timeseries.md):
 
 | Operation | Returns |
 | --- | --- |
-| `pf.timeseries.rolling_sum`, `_mean`, `_variance` | One value per row over a trailing window of the clock |
-| `pf.timeseries.rolling_covariance`, `_correlation` | The same, for a pair of columns |
-| `pf.timeseries.ewm_sum`, `_mean`, `_variance` | One value per row, weighted by how far the clock has moved |
-| `pf.timeseries.ewm_covariance`, `_correlation` | The same, for a pair of columns |
+| `pq.timeseries.rolling_sum`, `_mean`, `_variance` | One value per row over a trailing window of the clock |
+| `pq.timeseries.rolling_covariance`, `_correlation` | The same, for a pair of columns |
+| `pq.timeseries.ewm_sum`, `_mean`, `_variance` | One value per row, weighted by how far the clock has moved |
+| `pq.timeseries.ewm_covariance`, `_correlation` | The same, for a pair of columns |
 
 ```python
 result = trades.with_columns(
-    decayed_flow=pf.timeseries.ewm_sum(
+    decayed_flow=pq.timeseries.ewm_sum(
         "signed_quantity",
         clock="cumulative_volume",
         half_life=5_000_000,  # five million units of volume, not five million rows
@@ -70,7 +70,7 @@ solves rather than after one use of it.
 
 ```python
 fit = frame.select(
-    pf.least_squares(
+    pq.least_squares(
         ["return_1h", "return_6h"],  # several targets share one factorisation
         feature_columns,
         weights="liquidity",  # optional, finite and non-negative
@@ -88,9 +88,9 @@ solution of smallest norm, and reports the singular values it used.
 ### Principal components
 
 ```python
-components = frame.select(pf.pca(feature_columns, n_components=10).alias("pca")).unnest("pca")
+components = frame.select(pq.pca(feature_columns, n_components=10).alias("pca")).unnest("pca")
 
-scored = frame.lazy().faer.pca_transform(feature_columns, n_components=10, by="date").collect()
+scored = frame.lazy().qr.pca_transform(feature_columns, n_components=10, by="date").collect()
 ```
 
 `pca` reports the loadings, the singular values, the explained variance and its ratio.
@@ -101,7 +101,7 @@ over the same data comparable.
 ### Covariance and correlation
 
 ```python
-risk = frame.select(pf.covariance(feature_columns, weights="recency").alias("cov")).unnest("cov")
+risk = frame.select(pq.covariance(feature_columns, weights="recency").alias("cov")).unnest("cov")
 ```
 
 Weights are read as reliability weights: scaling all of them by the same factor leaves the
@@ -112,7 +112,7 @@ corrects it.
 
 ```python
 solution = wide.select(
-    pf.solve_spd(
+    pq.solve_spd(
         matrix_columns,
         ["expected", "exposure"],
         row_index="asset_index",
@@ -137,12 +137,12 @@ once.
 states = (
     frame.lazy()
     .group_by("partition")
-    .agg(pf.least_squares_state("return", feature_columns).alias("state"))
+    .agg(pq.least_squares_state("return", feature_columns).alias("state"))
 )
 
 fit = (
-    states.select(pf.merge_least_squares_states("state").alias("state"))
-    .select(pf.finalise_least_squares("state", solver="qr").alias("fit"))
+    states.select(pq.merge_least_squares_states("state").alias("state"))
+    .select(pq.finalise_least_squares("state", solver="qr").alias("fit"))
     .unnest("fit")
     .collect()
 )
@@ -154,8 +154,8 @@ built for, and refuses to merge into a state that does not match.
 
 | State | Holds | Finalises to |
 | --- | --- | --- |
-| `pf.least_squares_state` | The triangular factor of the design with the targets appended | `pf.finalise_least_squares` |
-| `pf.covariance_state` | Counts, weights, means and centred cross-products | `pf.finalise_covariance`, `pf.finalise_correlation`, `pf.finalise_pca` |
+| `pq.least_squares_state` | The triangular factor of the design with the targets appended | `pq.finalise_least_squares` |
+| `pq.covariance_state` | Counts, weights, means and centred cross-products | `pq.finalise_covariance`, `pq.finalise_correlation`, `pq.finalise_pca` |
 
 The two states are not interchangeable. Least squares goes through the QR factor because
 solving it from second moments would square the conditioning of the data; second moments go
@@ -191,7 +191,7 @@ labels needed to read them, so nothing depends on the caller remembering the col
 
 ## What this is not
 
-polars-faer is a small set of dense operations, not a regression library, a statistics
+polars-qr is a small set of dense operations, not a regression library, a statistics
 package or a wrapper around faer. There is no matrix object crossing into Python, no formula
 parsing, no sparse support, and no raw factorisations: an operation is exposed when it is
 useful in itself, not because a decomposition can compute it.

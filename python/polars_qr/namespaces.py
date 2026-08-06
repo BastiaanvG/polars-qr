@@ -1,27 +1,27 @@
-"""The `.faer` namespaces.
+"""The `.qr` namespaces.
 
 On a frame, row-preserving operations read better as methods than as expressions: the
 grouping column, the window and the unnesting are all part of one call instead of three.
 
 On an expression, the timeseries statistics read better with the column they measure in
 front of them. Those methods are wrappers and nothing else — every one of them hands
-straight over to the function of the same name in `polars_faer.timeseries`, which is where
+straight over to the function of the same name in `polars_qr.timeseries`, which is where
 the arguments, the defaults and the numbers are decided.
 """
 
 import polars as pl
 
-from polars_faer import timeseries
-from polars_faer._typing import (
+from polars_qr import timeseries
+from polars_qr._typing import (
     ClockSpan,
     IntoExpr,
     IntoExprColumns,
     NullPolicy,
     TimeseriesNullPolicy,
 )
-from polars_faer.pca import pca_transform
+from polars_qr.pca import pca_transform
 
-__all__ = ["FaerExprNamespace", "FaerFrame", "FaerLazyFrame"]
+__all__ = ["QrExprNamespace", "QrFrame", "QrLazyFrame"]
 
 
 def _scores(
@@ -46,8 +46,8 @@ def _scores(
     return frame.with_columns(scores.alias("__faer_scores")).unnest("__faer_scores")
 
 
-@pl.api.register_lazyframe_namespace("faer")
-class FaerLazyFrame:
+@pl.api.register_lazyframe_namespace("qr")
+class QrLazyFrame:
     """Row-preserving dense operations on a lazy frame."""
 
     def __init__(self, frame: pl.LazyFrame) -> None:
@@ -93,8 +93,8 @@ class FaerLazyFrame:
         )
 
 
-@pl.api.register_dataframe_namespace("faer")
-class FaerFrame:
+@pl.api.register_dataframe_namespace("qr")
+class QrFrame:
     """Row-preserving dense operations on an eager frame."""
 
     def __init__(self, frame: pl.DataFrame) -> None:
@@ -112,7 +112,7 @@ class FaerFrame:
     ) -> pl.DataFrame:
         """Add one score column per component to the frame.
 
-        The arguments are those of :meth:`FaerLazyFrame.pca_transform`.
+        The arguments are those of :meth:`QrLazyFrame.pca_transform`.
         """
         return _scores(
             self._frame.lazy(),
@@ -125,8 +125,8 @@ class FaerFrame:
         ).collect()
 
 
-@pl.api.register_expr_namespace("faer")
-class FaerExprNamespace:
+@pl.api.register_expr_namespace("qr")
+class QrExprNamespace:
     """Timeseries statistics on the expression they measure."""
 
     def __init__(self, expr: pl.Expr) -> None:
@@ -141,7 +141,7 @@ class FaerExprNamespace:
         min_clock_span: ClockSpan | None = None,
         null_policy: TimeseriesNullPolicy = "skip",
     ) -> pl.Expr:
-        """See :func:`polars_faer.timeseries.rolling_sum`."""
+        """See :func:`polars_qr.timeseries.rolling_sum`."""
         return timeseries.rolling_sum(
             self._expr,
             clock=clock,
@@ -160,7 +160,7 @@ class FaerExprNamespace:
         min_clock_span: ClockSpan | None = None,
         null_policy: TimeseriesNullPolicy = "skip",
     ) -> pl.Expr:
-        """See :func:`polars_faer.timeseries.rolling_mean`."""
+        """See :func:`polars_qr.timeseries.rolling_mean`."""
         return timeseries.rolling_mean(
             self._expr,
             clock=clock,
@@ -180,7 +180,7 @@ class FaerExprNamespace:
         ddof: int = 1,
         null_policy: TimeseriesNullPolicy = "skip",
     ) -> pl.Expr:
-        """See :func:`polars_faer.timeseries.rolling_variance`."""
+        """See :func:`polars_qr.timeseries.rolling_variance`."""
         return timeseries.rolling_variance(
             self._expr,
             clock=clock,
@@ -202,7 +202,7 @@ class FaerExprNamespace:
         ddof: int = 1,
         null_policy: TimeseriesNullPolicy = "skip",
     ) -> pl.Expr:
-        """See :func:`polars_faer.timeseries.rolling_covariance`."""
+        """See :func:`polars_qr.timeseries.rolling_covariance`."""
         return timeseries.rolling_covariance(
             self._expr,
             other,
@@ -224,7 +224,7 @@ class FaerExprNamespace:
         min_clock_span: ClockSpan | None = None,
         null_policy: TimeseriesNullPolicy = "skip",
     ) -> pl.Expr:
-        """See :func:`polars_faer.timeseries.rolling_correlation`."""
+        """See :func:`polars_qr.timeseries.rolling_correlation`."""
         return timeseries.rolling_correlation(
             self._expr,
             other,
@@ -243,7 +243,7 @@ class FaerExprNamespace:
         min_samples: int = 1,
         null_policy: TimeseriesNullPolicy = "skip",
     ) -> pl.Expr:
-        """See :func:`polars_faer.timeseries.ewm_sum`."""
+        """See :func:`polars_qr.timeseries.ewm_sum`."""
         return timeseries.ewm_sum(
             self._expr,
             clock=clock,
@@ -260,7 +260,7 @@ class FaerExprNamespace:
         min_samples: int = 1,
         null_policy: TimeseriesNullPolicy = "skip",
     ) -> pl.Expr:
-        """See :func:`polars_faer.timeseries.ewm_mean`."""
+        """See :func:`polars_qr.timeseries.ewm_mean`."""
         return timeseries.ewm_mean(
             self._expr,
             clock=clock,
@@ -278,7 +278,7 @@ class FaerExprNamespace:
         bias: bool = False,
         null_policy: TimeseriesNullPolicy = "skip",
     ) -> pl.Expr:
-        """See :func:`polars_faer.timeseries.ewm_variance`."""
+        """See :func:`polars_qr.timeseries.ewm_variance`."""
         return timeseries.ewm_variance(
             self._expr,
             clock=clock,
@@ -298,7 +298,7 @@ class FaerExprNamespace:
         bias: bool = False,
         null_policy: TimeseriesNullPolicy = "skip",
     ) -> pl.Expr:
-        """See :func:`polars_faer.timeseries.ewm_covariance`."""
+        """See :func:`polars_qr.timeseries.ewm_covariance`."""
         return timeseries.ewm_covariance(
             self._expr,
             other,
@@ -318,7 +318,7 @@ class FaerExprNamespace:
         min_samples: int = 1,
         null_policy: TimeseriesNullPolicy = "skip",
     ) -> pl.Expr:
-        """See :func:`polars_faer.timeseries.ewm_correlation`."""
+        """See :func:`polars_qr.timeseries.ewm_correlation`."""
         return timeseries.ewm_correlation(
             self._expr,
             other,

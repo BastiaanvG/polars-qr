@@ -2,7 +2,7 @@ import numpy as np
 import polars as pl
 import pytest
 
-import polars_faer as pf
+import polars_qr as pq
 
 FEATURES = ["a", "b", "c"]
 
@@ -15,7 +15,7 @@ def reference(frame, features=FEATURES, *, centre=True, scale=False):
 
 
 def test_components_match_a_reference_decomposition(frame):
-    out = frame.select(pf.pca(FEATURES).alias("pca")).unnest("pca")
+    out = frame.select(pq.pca(FEATURES).alias("pca")).unnest("pca")
 
     _, singular_values, right = reference(frame)
     assert out["features"][0].to_list() == FEATURES
@@ -26,15 +26,15 @@ def test_components_match_a_reference_decomposition(frame):
 
 
 def test_the_components_are_orthonormal(frame):
-    out = frame.select(pf.pca(FEATURES).alias("pca")).unnest("pca")
+    out = frame.select(pq.pca(FEATURES).alias("pca")).unnest("pca")
 
     components = np.array(out["components"][0].to_list())
     assert np.allclose(components @ components.T, np.eye(len(FEATURES)))
 
 
 def test_centring_is_reported_and_can_be_turned_off(frame):
-    centred = frame.select(pf.pca(FEATURES).alias("pca")).unnest("pca")
-    raw = frame.select(pf.pca(FEATURES, centre=False).alias("pca")).unnest("pca")
+    centred = frame.select(pq.pca(FEATURES).alias("pca")).unnest("pca")
+    raw = frame.select(pq.pca(FEATURES, centre=False).alias("pca")).unnest("pca")
 
     x = frame.select(FEATURES).to_numpy()
     assert np.allclose(centred["means"][0].to_list(), x.mean(axis=0))
@@ -43,7 +43,7 @@ def test_centring_is_reported_and_can_be_turned_off(frame):
 
 
 def test_scaling_matches_a_standardised_decomposition(frame):
-    out = frame.select(pf.pca(FEATURES, scale=True).alias("pca")).unnest("pca")
+    out = frame.select(pq.pca(FEATURES, scale=True).alias("pca")).unnest("pca")
 
     _, singular_values, _ = reference(frame, scale=True)
     x = frame.select(FEATURES).to_numpy()
@@ -52,7 +52,7 @@ def test_scaling_matches_a_standardised_decomposition(frame):
 
 
 def test_only_the_requested_components_come_back(frame):
-    out = frame.select(pf.pca(FEATURES, n_components=2).alias("pca")).unnest("pca")
+    out = frame.select(pq.pca(FEATURES, n_components=2).alias("pca")).unnest("pca")
 
     assert len(out["components"][0].to_list()) == 2
     assert len(out["singular_values"][0].to_list()) == 2
@@ -63,7 +63,7 @@ def test_each_group_is_decomposed_on_its_own_rows(frame):
     out = (
         frame.lazy()
         .group_by("group")
-        .agg(pf.pca(FEATURES, n_components=2).alias("pca"))
+        .agg(pq.pca(FEATURES, n_components=2).alias("pca"))
         .unnest("pca")
         .collect()
     )
@@ -76,14 +76,14 @@ def test_each_group_is_decomposed_on_its_own_rows(frame):
 
 def test_more_components_than_the_data_supports_is_rejected(frame):
     with pytest.raises(pl.exceptions.ComputeError, match="support at most"):
-        frame.select(pf.pca(FEATURES, n_components=4))
+        frame.select(pq.pca(FEATURES, n_components=4))
 
 
 def test_the_component_signs_do_not_depend_on_the_data_sign(frame):
-    plain = frame.select(pf.pca(FEATURES).alias("pca")).unnest("pca")
+    plain = frame.select(pq.pca(FEATURES).alias("pca")).unnest("pca")
     negated = (
         frame.with_columns([(-pl.col(name)).alias(name) for name in FEATURES])
-        .select(pf.pca(FEATURES).alias("pca"))
+        .select(pq.pca(FEATURES).alias("pca"))
         .unnest("pca")
     )
 
@@ -91,7 +91,7 @@ def test_the_component_signs_do_not_depend_on_the_data_sign(frame):
 
 
 def test_every_component_leads_with_a_positive_entry(frame):
-    out = frame.select(pf.pca(FEATURES).alias("pca")).unnest("pca")
+    out = frame.select(pq.pca(FEATURES).alias("pca")).unnest("pca")
 
     components = np.array(out["components"][0].to_list())
     leading = np.take_along_axis(components, np.abs(components).argmax(axis=1)[:, None], axis=1)
@@ -99,7 +99,7 @@ def test_every_component_leads_with_a_positive_entry(frame):
 
 
 def test_the_explained_variance_matches_the_column_variance(frame):
-    out = frame.select(pf.pca(FEATURES).alias("pca")).unnest("pca")
+    out = frame.select(pq.pca(FEATURES).alias("pca")).unnest("pca")
 
     x = frame.select(FEATURES).to_numpy()
     variance = np.array(out["explained_variance"][0].to_list())
@@ -109,8 +109,8 @@ def test_the_explained_variance_matches_the_column_variance(frame):
 
 
 def test_keeping_fewer_components_does_not_inflate_the_ratios(frame):
-    everything = frame.select(pf.pca(FEATURES).alias("pca")).unnest("pca")
-    first = frame.select(pf.pca(FEATURES, n_components=1).alias("pca")).unnest("pca")
+    everything = frame.select(pq.pca(FEATURES).alias("pca")).unnest("pca")
+    first = frame.select(pq.pca(FEATURES, n_components=1).alias("pca")).unnest("pca")
 
     assert np.isclose(
         everything["explained_variance_ratio"][0].to_list()[0],
@@ -120,16 +120,16 @@ def test_keeping_fewer_components_does_not_inflate_the_ratios(frame):
 
 
 def test_the_variance_decreases_from_one_component_to_the_next(frame):
-    out = frame.select(pf.pca(FEATURES).alias("pca")).unnest("pca")
+    out = frame.select(pq.pca(FEATURES).alias("pca")).unnest("pca")
 
     variance = out["explained_variance"][0].to_list()
     assert variance == sorted(variance, reverse=True)
 
 
 def test_scores_project_the_rows_onto_the_components(frame):
-    out = frame.select(pf.pca_transform(FEATURES, n_components=2).alias("scores")).unnest("scores")
+    out = frame.select(pq.pca_transform(FEATURES, n_components=2).alias("scores")).unnest("scores")
 
-    fit = frame.select(pf.pca(FEATURES, n_components=2).alias("pca")).unnest("pca")
+    fit = frame.select(pq.pca(FEATURES, n_components=2).alias("pca")).unnest("pca")
     x = frame.select(FEATURES).to_numpy()
     components = np.array(fit["components"][0].to_list())
     expected = (x - x.mean(axis=0)) @ components.T
@@ -138,7 +138,7 @@ def test_scores_project_the_rows_onto_the_components(frame):
 
 
 def test_scores_keep_one_row_per_input_row(frame):
-    out = frame.select(pf.pca_transform(FEATURES, n_components=1).alias("scores"))
+    out = frame.select(pq.pca_transform(FEATURES, n_components=1).alias("scores"))
 
     assert out.height == frame.height
 
@@ -149,7 +149,7 @@ def test_a_dropped_row_scores_null(frame):
     )
 
     out = with_null.select(
-        pf.pca_transform(FEATURES, n_components=2, null_policy="drop").alias("scores")
+        pq.pca_transform(FEATURES, n_components=2, null_policy="drop").alias("scores")
     ).unnest("scores")
 
     assert out.height == frame.height
@@ -159,13 +159,13 @@ def test_a_dropped_row_scores_null(frame):
 
 def test_scores_can_be_taken_within_a_group(frame):
     out = frame.with_columns(
-        pf.pca_transform(FEATURES, n_components=1).over("group").alias("scores")
+        pq.pca_transform(FEATURES, n_components=1).over("group").alias("scores")
     ).unnest("scores")
 
     for group in frame["group"].unique():
         rows = frame.filter(pl.col("group") == group)
         x = rows.select(FEATURES).to_numpy()
-        fit = rows.select(pf.pca(FEATURES, n_components=1).alias("pca")).unnest("pca")
+        fit = rows.select(pq.pca(FEATURES, n_components=1).alias("pca")).unnest("pca")
         components = np.array(fit["components"][0].to_list())
         expected = (x - x.mean(axis=0)) @ components.T
         got = out.filter(pl.col("group") == group)["component_1"].to_numpy()
@@ -173,9 +173,9 @@ def test_scores_can_be_taken_within_a_group(frame):
 
 
 def test_the_frame_namespace_adds_the_score_columns(frame):
-    out = frame.faer.pca_transform(FEATURES, n_components=2)
+    out = frame.qr.pca_transform(FEATURES, n_components=2)
 
-    expected = frame.select(pf.pca_transform(FEATURES, n_components=2).alias("scores")).unnest(
+    expected = frame.select(pq.pca_transform(FEATURES, n_components=2).alias("scores")).unnest(
         "scores"
     )
     assert out.columns == [*frame.columns, "component_1", "component_2"]
@@ -183,16 +183,16 @@ def test_the_frame_namespace_adds_the_score_columns(frame):
 
 
 def test_the_frame_namespace_can_group(frame):
-    out = frame.faer.pca_transform(FEATURES, n_components=1, by="group")
+    out = frame.qr.pca_transform(FEATURES, n_components=1, by="group")
 
     expected = frame.with_columns(
-        pf.pca_transform(FEATURES, n_components=1).over("group").alias("scores")
+        pq.pca_transform(FEATURES, n_components=1).over("group").alias("scores")
     ).unnest("scores")
     assert np.allclose(out["component_1"].to_numpy(), expected["component_1"].to_numpy())
 
 
 def test_the_lazy_namespace_matches_the_eager_one(frame):
-    lazy = frame.lazy().faer.pca_transform(FEATURES, n_components=2, by="group").collect()
-    eager = frame.faer.pca_transform(FEATURES, n_components=2, by="group")
+    lazy = frame.lazy().qr.pca_transform(FEATURES, n_components=2, by="group").collect()
+    eager = frame.qr.pca_transform(FEATURES, n_components=2, by="group")
 
     assert lazy.equals(eager)

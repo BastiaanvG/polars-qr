@@ -1,68 +1,48 @@
-# polars-faer
+# polars-qr
 
-A Polars expression plugin: dense numerical operations in Rust, backed by faer, reached from
-Python as ordinary expressions.
+A Polars expression plugin: dense numerical operations written in Rust, backed by the faer
+crate, reached from Python as ordinary expressions.
 
-## Building
-
-The extension needs a Rust toolchain.
+## Commands
 
 ```bash
 uv sync
-uv run maturin develop --release --uv
+uv run maturin develop --release --uv   # rebuild after any change under src/
 uv run pytest
 cargo test
+uv run mkdocs serve
 ```
 
-## Generalized-clock timeseries statistics
+The Rust side is only rebuilt by `maturin develop`. A Python-only change needs no rebuild; a
+change under `src/` that is not rebuilt will appear to have done nothing.
 
-The canonical specification is `docs/timeseries.md`. Read it before editing anything under:
+## Conventions that are not the tool defaults
 
-- `src/timeseries/`
-- `src/expressions/timeseries.rs`
-- `python/polars_faer/timeseries.py`
-- the timeseries namespace methods in `python/polars_faer/namespaces.py`
-- `tests/test_timeseries.py` and `tests/reference.py`
+- **Prose and identifiers are British**: `finalise`, `centred`, `normalise`, `summarise`.
+  This reaches the public API, so `finalise_covariance` is the function name.
+- **Errors never panic on user input.** Anything reachable from Python returns a
+  `PolarsResult` whose message says what was wrong, what was received and what would fix it.
+  No `unwrap`, `expect` or unchecked indexing on user data.
+- **Column names come from the expressions, not the data.** Polars hands a plugin its inputs
+  without names inside `group_by().agg()`, so names travel as a keyword argument built by
+  `_typing.output_names`. Reading `series.name()` gives empty strings in a grouped query.
+- **Lockfiles are deliberately not committed**, so a build resolves against the floors in
+  `pyproject.toml` and `Cargo.toml`.
+- **Comments say why, not what.** A comment that restates the line above it is noise; one
+  that explains a numerical choice, a boundary or a trap is the point.
+- **Tests are named as sentences** that state the behaviour: `a_null_lets_the_state_decay_past_it`.
 
-Public API:
+## Where things live
 
-- `polars_faer.timeseries.rolling_sum`
-- `polars_faer.timeseries.rolling_mean`
-- `polars_faer.timeseries.rolling_variance`
-- `polars_faer.timeseries.rolling_covariance`
-- `polars_faer.timeseries.rolling_correlation`
-- `polars_faer.timeseries.ewm_sum`
-- `polars_faer.timeseries.ewm_mean`
-- `polars_faer.timeseries.ewm_variance`
-- `polars_faer.timeseries.ewm_covariance`
-- `polars_faer.timeseries.ewm_correlation`
+Guides and the API reference are in `docs/`, published with MkDocs. The public contracts —
+what an operation reads, what it returns, how nulls and weights are treated — are in
+`docs/guide/contracts.md`, and each operation family has a guide page beside it.
 
-Convenience namespace: `Expr.faer.<operation>`, which wraps the functions above and holds no
-numerical logic of its own.
+`.claude/rules/` holds the working notes for each part of the codebase; they load when you
+open a file they cover.
 
-Invariants:
+## Before changing numerical behaviour
 
-- One output per input row, in the order it was given.
-- Clocks are validated as non-null, finite and non-decreasing, and are never sorted silently.
-- Numeric spans use the units of the numeric clock; temporal spans use `datetime.timedelta`.
-- String durations such as `"10000i"` are not accepted.
-- Exponential weighting uses normalised decaying-observation weights, so every valid
-  observation enters with weight one.
-- Pairwise statistics use one joint validity mask.
-- The output dtype is always `Float64`.
-- User input never causes a Rust panic: it returns a `PolarsResult` with a message that says
-  what was wrong and what would fix it.
-- Do not change numerical semantics without updating `docs/timeseries.md`.
-
-## The rest of the package
-
-Dense operations over a whole group: `least_squares`, `pca`, `pca_transform`, `covariance`,
-`correlation`, `solve_spd`, and mergeable states for partitioned data. The README documents
-their input and result contracts.
-
-Two things worth knowing before changing them:
-
-- Inside `group_by().agg()` Polars passes a plugin its inputs without names, so every
-  operation sends the caller's column names as a keyword argument (`_typing.output_names`)
-  rather than reading `series.name()`.
-- Lockfiles are deliberately not committed.
+Update, together: the Rust implementation, its unit tests, the Python docstring, the guide
+page under `docs/guide/`, and at least one example. A change that alters a documented result
+without touching the docs is a bug in the change.

@@ -2,13 +2,13 @@
 
 from importlib.metadata import PackageNotFoundError, version
 
-from polars_faer import timeseries
-from polars_faer.covariance import correlation, covariance
-from polars_faer.least_squares import least_squares
-from polars_faer.namespaces import FaerExprNamespace, FaerFrame, FaerLazyFrame
-from polars_faer.pca import pca, pca_transform
-from polars_faer.spd import solve_spd
-from polars_faer.states import (
+from polars_qr import timeseries
+from polars_qr.covariance import correlation, covariance
+from polars_qr.least_squares import least_squares
+from polars_qr.namespaces import QrExprNamespace, QrFrame, QrLazyFrame
+from polars_qr.pca import pca, pca_transform
+from polars_qr.spd import solve_spd
+from polars_qr.states import (
     covariance_state,
     finalise_correlation,
     finalise_covariance,
@@ -20,14 +20,14 @@ from polars_faer.states import (
 )
 
 try:
-    __version__ = version("polars-faer")
+    __version__ = version("polars-qr")
 except PackageNotFoundError:  # pragma: no cover - only hit in a source tree
     __version__ = "0.0.0"
 
 __all__ = [
-    "FaerExprNamespace",
-    "FaerFrame",
-    "FaerLazyFrame",
+    "QrExprNamespace",
+    "QrFrame",
+    "QrLazyFrame",
     "__version__",
     "correlation",
     "covariance",

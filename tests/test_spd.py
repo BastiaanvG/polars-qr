@@ -2,7 +2,7 @@ import numpy as np
 import polars as pl
 import pytest
 
-import polars_faer as pf
+import polars_qr as pq
 
 COLUMNS = ["m0", "m1", "m2"]
 
@@ -27,7 +27,7 @@ def system(rng):
 def test_the_solution_matches_a_reference_solve(system):
     frame, values = system
 
-    out = frame.select(pf.solve_spd(COLUMNS, "expected", row_index="asset").alias("solved")).unnest(
+    out = frame.select(pq.solve_spd(COLUMNS, "expected", row_index="asset").alias("solved")).unnest(
         "solved"
     )
 
@@ -43,7 +43,7 @@ def test_several_right_hand_sides_are_solved_at_once(system):
     frame, values = system
 
     out = frame.select(
-        pf.solve_spd(COLUMNS, ["expected", "exposure"], row_index="asset").alias("solved")
+        pq.solve_spd(COLUMNS, ["expected", "exposure"], row_index="asset").alias("solved")
     ).unnest("solved")
 
     expected = np.linalg.solve(values, frame.select(["expected", "exposure"]).to_numpy())
@@ -56,10 +56,10 @@ def test_the_row_index_fixes_the_order(system):
     shuffled = frame.sort("expected")
 
     ordered = frame.select(
-        pf.solve_spd(COLUMNS, "expected", row_index="asset").alias("solved")
+        pq.solve_spd(COLUMNS, "expected", row_index="asset").alias("solved")
     ).unnest("solved")
     out = shuffled.select(
-        pf.solve_spd(COLUMNS, "expected", row_index="asset").alias("solved")
+        pq.solve_spd(COLUMNS, "expected", row_index="asset").alias("solved")
     ).unnest("solved")
 
     assert np.allclose(ordered["solution"][0].to_list(), out["solution"][0].to_list())
@@ -76,10 +76,10 @@ def test_a_shift_makes_a_singular_matrix_solvable():
     )
 
     with pytest.raises(pl.exceptions.ComputeError, match="not positive definite"):
-        frame.select(pf.solve_spd(["m0", "m1"], "rhs", row_index="asset"))
+        frame.select(pq.solve_spd(["m0", "m1"], "rhs", row_index="asset"))
 
     out = frame.select(
-        pf.solve_spd(["m0", "m1"], "rhs", row_index="asset", diagonal_shift=1e-6).alias("solved")
+        pq.solve_spd(["m0", "m1"], "rhs", row_index="asset", diagonal_shift=1e-6).alias("solved")
     ).unnest("solved")
     assert out["diagonal_shift"][0] == 1e-6
 
@@ -95,7 +95,7 @@ def test_an_asymmetric_matrix_is_rejected():
     )
 
     with pytest.raises(pl.exceptions.ComputeError, match="not symmetric"):
-        frame.select(pf.solve_spd(["m0", "m1"], "rhs", row_index="asset"))
+        frame.select(pq.solve_spd(["m0", "m1"], "rhs", row_index="asset"))
 
 
 def test_a_repeated_row_index_is_rejected(system):
@@ -103,7 +103,7 @@ def test_a_repeated_row_index_is_rejected(system):
     repeated = frame.with_columns(pl.lit(0).alias("asset"))
 
     with pytest.raises(pl.exceptions.ComputeError, match="repeats a value"):
-        repeated.select(pf.solve_spd(COLUMNS, "expected", row_index="asset"))
+        repeated.select(pq.solve_spd(COLUMNS, "expected", row_index="asset"))
 
 
 def test_a_non_integer_row_index_is_rejected(system):
@@ -111,7 +111,7 @@ def test_a_non_integer_row_index_is_rejected(system):
     labelled = frame.with_columns(pl.col("asset").cast(pl.Float64).alias("asset"))
 
     with pytest.raises(pl.exceptions.ComputeError, match="not an integer"):
-        labelled.select(pf.solve_spd(COLUMNS, "expected", row_index="asset"))
+        labelled.select(pq.solve_spd(COLUMNS, "expected", row_index="asset"))
 
 
 def test_a_null_in_the_matrix_is_rejected(system):
@@ -121,12 +121,12 @@ def test_a_null_in_the_matrix_is_rejected(system):
     )
 
     with pytest.raises(pl.exceptions.ComputeError, match="null or non-finite"):
-        holed.select(pf.solve_spd(COLUMNS, "expected", row_index="asset"))
+        holed.select(pq.solve_spd(COLUMNS, "expected", row_index="asset"))
 
 
 def test_a_covariance_matrix_can_be_solved_against(frame):
     features = ["a", "b", "c"]
-    covariance = frame.select(pf.covariance(features).alias("cov")).unnest("cov")
+    covariance = frame.select(pq.covariance(features).alias("cov")).unnest("cov")
     values = np.array(covariance["covariance"][0].to_list())
 
     wide = pl.DataFrame(
@@ -140,7 +140,7 @@ def test_a_covariance_matrix_can_be_solved_against(frame):
     )
 
     out = wide.select(
-        pf.solve_spd(features, "signal", row_index="row", diagonal_shift=1e-10).alias("solved")
+        pq.solve_spd(features, "signal", row_index="row", diagonal_shift=1e-10).alias("solved")
     ).unnest("solved")
 
     expected = np.linalg.solve(values + 1e-10 * np.eye(3), wide["signal"].to_numpy())

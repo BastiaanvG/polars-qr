@@ -3,7 +3,7 @@
 import numpy as np
 import polars as pl
 
-import polars_faer as pf
+import polars_qr as pq
 
 rng = np.random.default_rng(5)
 n = 4000
@@ -33,19 +33,19 @@ result = (
     trades.lazy()
     .sort(["symbol", "cumulative_volume"])
     .with_columns(
-        decayed_flow=pf.timeseries.ewm_sum(
+        decayed_flow=pq.timeseries.ewm_sum(
             "signed_quantity",
             clock="cumulative_volume",
             half_life=50_000,
         ).over("symbol"),
-        rolling_corr=pf.timeseries.rolling_correlation(
+        rolling_corr=pq.timeseries.rolling_correlation(
             "asset_return",
             "market_return",
             clock="cumulative_volume",
             window=100_000,
             min_samples=50,
         ).over("symbol"),
-        decayed_corr=pf.timeseries.ewm_correlation(
+        decayed_corr=pq.timeseries.ewm_correlation(
             "asset_return",
             "market_return",
             clock="cumulative_volume",
@@ -74,7 +74,7 @@ for symbol in ("AAA", "BBB"):
 # The same statistic reads more naturally from the column it measures.
 through_namespace = trades.sort(["symbol", "cumulative_volume"]).with_columns(
     decayed_flow=pl.col("signed_quantity")
-    .faer.ewm_sum(clock="cumulative_volume", half_life=50_000)  # type: ignore[attr-defined]
+    .qr.ewm_sum(clock="cumulative_volume", half_life=50_000)  # type: ignore[attr-defined]
     .over("symbol")
 )
 print(
@@ -92,7 +92,7 @@ variance_clocked = (
     .sort(["symbol", "cumulative_volume"])
     .with_columns(variance_clock=pl.col("market_return").pow(2).cum_sum().over("symbol"))
     .with_columns(
-        signal_state=pf.timeseries.ewm_mean(
+        signal_state=pq.timeseries.ewm_mean(
             "asset_return",
             clock="variance_clock",
             half_life=1e-5,

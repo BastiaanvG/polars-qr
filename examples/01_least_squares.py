@@ -3,7 +3,7 @@
 import numpy as np
 import polars as pl
 
-import polars_faer as pf
+import polars_qr as pq
 
 rng = np.random.default_rng(0)
 n = 500
@@ -22,7 +22,7 @@ frame = pl.DataFrame(
 
 columns = ["size", "value", "momentum"]
 
-fit = frame.select(pf.least_squares("target", columns, intercept=True).alias("fit")).unnest("fit")
+fit = frame.select(pq.least_squares("target", columns, intercept=True).alias("fit")).unnest("fit")
 print("features:  ", fit["features"][0].to_list())
 print("coefficients:", np.round(fit["coefficients"][0].to_list()[0], 3))
 print("intercept: ", round(fit["intercept"][0].to_list()[0], 3))
@@ -30,7 +30,7 @@ print("rank:      ", fit["rank"][0], "of", len(columns) + 1)
 print("condition: ", round(fit["condition"][0], 2))
 
 # Several targets share one factorisation, so they are fitted on one pass over the data.
-both = frame.select(pf.least_squares(["target", "other"], columns).alias("fit")).unnest("fit")
+both = frame.select(pq.least_squares(["target", "other"], columns).alias("fit")).unnest("fit")
 print("\ntargets:   ", both["targets"][0].to_list())
 print("coefficients:")
 for name, row in zip(both["targets"][0].to_list(), both["coefficients"][0].to_list(), strict=True):
@@ -38,6 +38,6 @@ for name, row in zip(both["targets"][0].to_list(), both["coefficients"][0].to_li
 
 # Weighting the observations, and shrinking the coefficients towards zero.
 weighted = frame.select(
-    pf.least_squares("target", columns, weights="weight", l2_penalty=10.0).alias("fit")
+    pq.least_squares("target", columns, weights="weight", l2_penalty=10.0).alias("fit")
 ).unnest("fit")
 print("\nweighted and penalised:", np.round(weighted["coefficients"][0].to_list()[0], 3))

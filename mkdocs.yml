@@ -1,0 +1,82 @@
+site_name: polars-qr
+site_description: Dense numerical operations for Polars, backed by faer.
+site_url: https://bastiaanvg.github.io/polars-qr/
+repo_url: https://github.com/BastiaanvG/polars-qr
+repo_name: BastiaanvG/polars-qr
+edit_uri: ""
+
+theme:
+  name: material
+  features:
+    - content.code.copy
+    - navigation.sections
+    - navigation.top
+    - search.suggest
+    - toc.follow
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+
+nav:
+  - Home: index.md
+  - Guide:
+      - Reading and returning data: guide/contracts.md
+      - Least squares: guide/least_squares.md
+      - Components and second moments: guide/moments.md
+      - Positive-definite systems: guide/spd.md
+      - Partitioned data: guide/states.md
+      - Statistics against a clock: guide/timeseries.md
+  - Examples:
+      - Overview: examples/index.md
+      - Least squares: examples/least_squares.md
+      - Grouped and lazy: examples/grouped.md
+      - Principal components: examples/components.md
+      - Covariance and solving: examples/covariance.md
+      - Partitioned data: examples/partitioned.md
+      - Statistics against a clock: examples/timeseries.md
+  - API reference:
+      - Least squares: api/least_squares.md
+      - Components: api/pca.md
+      - Second moments: api/covariance.md
+      - Positive-definite systems: api/spd.md
+      - Partitioned state: api/states.md
+      - Statistics against a clock: api/timeseries.md
+      - Namespaces: api/namespaces.md
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.snippets:
+      base_path: [.]
+      check_paths: true
+  - toc:
+      permalink: true
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [python]
+          options:
+            docstring_style: numpy
+            show_root_heading: true
+            show_source: false
+            show_signature_annotations: true
+            separate_signature: true
+            members_order: source
+            filters: ["!^_"]
+
+watch:
+  - python/polars_qr

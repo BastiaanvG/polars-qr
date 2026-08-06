@@ -3,7 +3,7 @@
 import numpy as np
 import polars as pl
 
-import polars_faer as pf
+import polars_qr as pq
 
 rng = np.random.default_rng(1)
 n = 900
@@ -23,7 +23,7 @@ frame = pl.DataFrame(
 daily = (
     frame.lazy()
     .group_by("date")
-    .agg(pf.least_squares("target", ["signal", "control"]).alias("fit"))
+    .agg(pq.least_squares("target", ["signal", "control"]).alias("fit"))
     .unnest("fit")
     .select(
         "date",
@@ -41,7 +41,7 @@ print("  correlation:", round(np.corrcoef(daily["signal_beta"].to_numpy(), slope
 # Scores are row-preserving, so they land next to the rows they came from.
 scored = (
     frame.lazy()
-    .faer.pca_transform(["signal", "control"], n_components=1, by="date")  # type: ignore[attr-defined]
+    .qr.pca_transform(["signal", "control"], n_components=1, by="date")  # type: ignore[attr-defined]
     .select("date", "signal", "component_1")
     .collect()
 )

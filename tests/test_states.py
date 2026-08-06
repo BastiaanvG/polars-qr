@@ -2,7 +2,7 @@ import numpy as np
 import polars as pl
 import pytest
 
-import polars_faer as pf
+import polars_qr as pq
 
 FEATURES = ["a", "b", "c"]
 
@@ -19,16 +19,16 @@ def fit_through_states(frame, **kwargs):
     return (
         frame.lazy()
         .group_by("part")
-        .agg(pf.least_squares_state("y", FEATURES, **kwargs).alias("state"))
-        .select(pf.merge_least_squares_states("state").alias("state"))
-        .select(pf.finalise_least_squares("state", **finalise).alias("fit"))
+        .agg(pq.least_squares_state("y", FEATURES, **kwargs).alias("state"))
+        .select(pq.merge_least_squares_states("state").alias("state"))
+        .select(pq.finalise_least_squares("state", **finalise).alias("fit"))
         .unnest("fit")
         .collect()
     )
 
 
 def test_a_fit_through_states_matches_a_fit_in_one_pass(frame, rng):
-    direct = frame.select(pf.least_squares("y", FEATURES).alias("fit")).unnest("fit")
+    direct = frame.select(pq.least_squares("y", FEATURES).alias("fit")).unnest("fit")
 
     through = fit_through_states(partitioned(frame, rng))
 
@@ -56,19 +56,19 @@ def test_the_partitioning_does_not_change_the_answer(frame, rng):
 def test_a_state_carries_an_intercept_weights_and_several_targets(frame, rng):
     parted = partitioned(frame, rng)
     direct = frame.select(
-        pf.least_squares(["y", "z"], FEATURES, weights="weight", intercept=True).alias("fit")
+        pq.least_squares(["y", "z"], FEATURES, weights="weight", intercept=True).alias("fit")
     ).unnest("fit")
 
     through = (
         parted.lazy()
         .group_by("part")
         .agg(
-            pf.least_squares_state(["y", "z"], FEATURES, weights="weight", intercept=True).alias(
+            pq.least_squares_state(["y", "z"], FEATURES, weights="weight", intercept=True).alias(
                 "state"
             )
         )
-        .select(pf.merge_least_squares_states("state").alias("state"))
-        .select(pf.finalise_least_squares("state").alias("fit"))
+        .select(pq.merge_least_squares_states("state").alias("state"))
+        .select(pq.finalise_least_squares("state").alias("fit"))
         .unnest("fit")
         .collect()
     )
@@ -79,7 +79,7 @@ def test_a_state_carries_an_intercept_weights_and_several_targets(frame, rng):
 
 
 def test_the_penalty_is_applied_once_at_the_end(frame, rng):
-    direct = frame.select(pf.least_squares("y", FEATURES, l2_penalty=25.0).alias("fit")).unnest(
+    direct = frame.select(pq.least_squares("y", FEATURES, l2_penalty=25.0).alias("fit")).unnest(
         "fit"
     )
 
@@ -104,7 +104,7 @@ def test_a_state_is_smaller_than_the_rows_it_summarises(frame, rng):
         partitioned(frame, rng, n_parts=2)
         .lazy()
         .group_by("part")
-        .agg(pf.least_squares_state("y", FEATURES).alias("state"))
+        .agg(pq.least_squares_state("y", FEATURES).alias("state"))
         .collect()
     )
 
@@ -119,16 +119,16 @@ def test_states_can_be_merged_a_second_time(frame, rng):
     once = (
         parted.lazy()
         .group_by("part")
-        .agg(pf.least_squares_state("y", FEATURES).alias("state"))
-        .select(pf.merge_least_squares_states("state").alias("state"))
+        .agg(pq.least_squares_state("y", FEATURES).alias("state"))
+        .select(pq.merge_least_squares_states("state").alias("state"))
         .collect()
     )
     twice = (
-        once.select(pf.merge_least_squares_states("state").alias("state"))
-        .select(pf.finalise_least_squares("state").alias("fit"))
+        once.select(pq.merge_least_squares_states("state").alias("state"))
+        .select(pq.finalise_least_squares("state").alias("fit"))
         .unnest("fit")
     )
-    direct = frame.select(pf.least_squares("y", FEATURES).alias("fit")).unnest("fit")
+    direct = frame.select(pq.least_squares("y", FEATURES).alias("fit")).unnest("fit")
 
     assert np.allclose(twice["coefficients"][0].to_list(), direct["coefficients"][0].to_list())
 
@@ -136,30 +136,30 @@ def test_states_can_be_merged_a_second_time(frame, rng):
 def test_states_built_for_different_columns_refuse_to_merge(frame):
     states = pl.concat(
         [
-            frame.select(pf.least_squares_state("y", FEATURES).alias("state")),
-            frame.select(pf.least_squares_state("y", ["a", "b"]).alias("state")),
+            frame.select(pq.least_squares_state("y", FEATURES).alias("state")),
+            frame.select(pq.least_squares_state("y", ["a", "b"]).alias("state")),
         ],
         how="vertical",
     )
 
     with pytest.raises(pl.exceptions.ComputeError, match="different columns"):
-        states.select(pf.merge_least_squares_states("state"))
+        states.select(pq.merge_least_squares_states("state"))
 
 
 def test_a_blob_that_is_not_a_state_is_rejected():
     frame = pl.DataFrame({"state": [b"certainly not a state"]})
 
-    with pytest.raises(pl.exceptions.ComputeError, match="not a polars-faer state"):
-        frame.select(pf.finalise_least_squares("state"))
+    with pytest.raises(pl.exceptions.ComputeError, match="not a polars-qr state"):
+        frame.select(pq.finalise_least_squares("state"))
 
 
 def covariance_through_states(frame, finaliser=None, **kwargs):
-    finaliser = finaliser or pf.finalise_covariance
+    finaliser = finaliser or pq.finalise_covariance
     return (
         frame.lazy()
         .group_by("part")
-        .agg(pf.covariance_state(FEATURES, **kwargs).alias("state"))
-        .select(pf.merge_covariance_states("state").alias("state"))
+        .agg(pq.covariance_state(FEATURES, **kwargs).alias("state"))
+        .select(pq.merge_covariance_states("state").alias("state"))
         .select(finaliser("state").alias("cov"))
         .unnest("cov")
         .collect()
@@ -167,7 +167,7 @@ def covariance_through_states(frame, finaliser=None, **kwargs):
 
 
 def test_a_covariance_through_states_matches_one_in_one_pass(frame, rng):
-    direct = frame.select(pf.covariance(FEATURES).alias("cov")).unnest("cov")
+    direct = frame.select(pq.covariance(FEATURES).alias("cov")).unnest("cov")
 
     through = covariance_through_states(partitioned(frame, rng))
 
@@ -186,7 +186,7 @@ def test_the_covariance_partitioning_does_not_change_the_answer(frame, rng):
 
 
 def test_a_covariance_state_carries_weights(frame, rng):
-    direct = frame.select(pf.covariance(FEATURES, weights="weight").alias("cov")).unnest("cov")
+    direct = frame.select(pq.covariance(FEATURES, weights="weight").alias("cov")).unnest("cov")
 
     through = covariance_through_states(partitioned(frame, rng), weights="weight")
 
@@ -195,23 +195,23 @@ def test_a_covariance_state_carries_weights(frame, rng):
 
 
 def test_a_covariance_state_can_be_finalised_as_a_correlation(frame, rng):
-    direct = frame.select(pf.correlation(FEATURES).alias("corr")).unnest("corr")
+    direct = frame.select(pq.correlation(FEATURES).alias("corr")).unnest("corr")
 
-    through = covariance_through_states(partitioned(frame, rng), finaliser=pf.finalise_correlation)
+    through = covariance_through_states(partitioned(frame, rng), finaliser=pq.finalise_correlation)
 
     assert np.allclose(through["correlation"][0].to_list(), direct["correlation"][0].to_list())
 
 
 def test_the_degrees_of_freedom_are_chosen_when_the_state_is_finalised(frame, rng):
     parted = partitioned(frame, rng)
-    direct = frame.select(pf.covariance(FEATURES, ddof=0).alias("cov")).unnest("cov")
+    direct = frame.select(pq.covariance(FEATURES, ddof=0).alias("cov")).unnest("cov")
 
     through = (
         parted.lazy()
         .group_by("part")
-        .agg(pf.covariance_state(FEATURES).alias("state"))
-        .select(pf.merge_covariance_states("state").alias("state"))
-        .select(pf.finalise_covariance("state", ddof=0).alias("cov"))
+        .agg(pq.covariance_state(FEATURES).alias("state"))
+        .select(pq.merge_covariance_states("state").alias("state"))
+        .select(pq.finalise_covariance("state", ddof=0).alias("cov"))
         .unnest("cov")
         .collect()
     )
@@ -220,22 +220,22 @@ def test_the_degrees_of_freedom_are_chosen_when_the_state_is_finalised(frame, rn
 
 
 def test_a_least_squares_state_is_not_a_covariance_state(frame):
-    states = frame.select(pf.least_squares_state("y", FEATURES).alias("state"))
+    states = frame.select(pq.least_squares_state("y", FEATURES).alias("state"))
 
     with pytest.raises(pl.exceptions.ComputeError, match="least-squares state, but a covariance"):
-        states.select(pf.finalise_covariance("state"))
+        states.select(pq.finalise_covariance("state"))
 
 
 def test_components_from_a_state_match_ones_from_the_rows(frame, rng):
-    direct = frame.select(pf.pca(FEATURES).alias("pca")).unnest("pca")
+    direct = frame.select(pq.pca(FEATURES).alias("pca")).unnest("pca")
 
     through = (
         partitioned(frame, rng)
         .lazy()
         .group_by("part")
-        .agg(pf.covariance_state(FEATURES).alias("state"))
-        .select(pf.merge_covariance_states("state").alias("state"))
-        .select(pf.finalise_pca("state").alias("pca"))
+        .agg(pq.covariance_state(FEATURES).alias("state"))
+        .select(pq.merge_covariance_states("state").alias("state"))
+        .select(pq.finalise_pca("state").alias("pca"))
         .unnest("pca")
         .collect()
     )
@@ -258,15 +258,15 @@ def test_components_from_a_state_match_ones_from_the_rows(frame, rng):
 
 
 def test_a_standardised_decomposition_from_a_state(frame, rng):
-    direct = frame.select(pf.pca(FEATURES, scale=True).alias("pca")).unnest("pca")
+    direct = frame.select(pq.pca(FEATURES, scale=True).alias("pca")).unnest("pca")
 
     through = (
         partitioned(frame, rng)
         .lazy()
         .group_by("part")
-        .agg(pf.covariance_state(FEATURES).alias("state"))
-        .select(pf.merge_covariance_states("state").alias("state"))
-        .select(pf.finalise_pca("state", scale=True).alias("pca"))
+        .agg(pq.covariance_state(FEATURES).alias("state"))
+        .select(pq.merge_covariance_states("state").alias("state"))
+        .select(pq.finalise_pca("state", scale=True).alias("pca"))
         .unnest("pca")
         .collect()
     )
@@ -283,9 +283,9 @@ def test_only_the_requested_components_come_back_from_a_state(frame, rng):
         partitioned(frame, rng)
         .lazy()
         .group_by("part")
-        .agg(pf.covariance_state(FEATURES).alias("state"))
-        .select(pf.merge_covariance_states("state").alias("state"))
-        .select(pf.finalise_pca("state", n_components=2).alias("pca"))
+        .agg(pq.covariance_state(FEATURES).alias("state"))
+        .select(pq.merge_covariance_states("state").alias("state"))
+        .select(pq.finalise_pca("state", n_components=2).alias("pca"))
         .unnest("pca")
         .collect()
     )
