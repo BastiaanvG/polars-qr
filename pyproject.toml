@@ -92,6 +92,7 @@ max-args = 10
     "T20",     # examples print their results
 ]
 "tests/**" = [
+    "FBT",     # a reference implementation mirrors the signature it is checked against
     "ANN",     # tests need no annotations
     "D",       # nor docstrings
     "PLR2004", # magic numbers are fine in assertions
@@ -121,3 +122,9 @@ testpaths = ["tests"]
 addopts = ["--strict-markers", "--strict-config", "-ra"]
 xfail_strict = true
 filterwarnings = ["error"]
+
+[[tool.mypy.overrides]]
+# The reference implementations are imported by the tests the way pytest puts them on the
+# path, which is not a package mypy can follow.
+module = ["reference"]
+ignore_missing_imports = true

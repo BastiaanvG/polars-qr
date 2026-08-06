@@ -1,4 +1,5 @@
 from collections.abc import Sequence
+from datetime import timedelta
 from typing import Literal
 
 import polars as pl
@@ -10,6 +11,13 @@ IntoExprColumns = IntoExpr | Sequence[IntoExpr]
 NullPolicy = Literal["raise", "drop"]
 
 Solver = Literal["qr", "svd"]
+
+# A window width or a half-life: a number in the units of a numeric clock, or a duration
+# for a temporal one. Strings such as "10000i" are deliberately not accepted, because the
+# units of a clock are the caller's to know and a string hides them from the type checker.
+ClockSpan = int | float | timedelta
+
+TimeseriesNullPolicy = Literal["skip", "raise"]
 
 
 def as_expressions(columns: IntoExprColumns) -> list[pl.Expr]:

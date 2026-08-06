@@ -41,6 +41,27 @@ pip install polars-faer
 | `pf.correlation` | The same, divided through by the standard deviations |
 | `pf.solve_spd` | The solution of a positive-definite system, one per right-hand side |
 
+Statistics measured against a clock of your own — cumulative volume, a trade count,
+cumulative squared return — live in `pf.timeseries` and are documented in
+[docs/timeseries.md](docs/timeseries.md):
+
+| Operation | Returns |
+| --- | --- |
+| `pf.timeseries.rolling_sum`, `_mean`, `_variance` | One value per row over a trailing window of the clock |
+| `pf.timeseries.rolling_covariance`, `_correlation` | The same, for a pair of columns |
+| `pf.timeseries.ewm_sum`, `_mean`, `_variance` | One value per row, weighted by how far the clock has moved |
+| `pf.timeseries.ewm_covariance`, `_correlation` | The same, for a pair of columns |
+
+```python
+result = trades.with_columns(
+    decayed_flow=pf.timeseries.ewm_sum(
+        "signed_quantity",
+        clock="cumulative_volume",
+        half_life=5_000_000,  # five million units of volume, not five million rows
+    ).over(["symbol", "session"])
+)
+```
+
 ### Least squares
 
 One implementation covers ordinary fitting, weighted fitting, several targets at once,

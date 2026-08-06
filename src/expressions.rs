@@ -657,3 +657,5 @@ fn finalise_pca(inputs: &[Series], kwargs: FinalisePcaKwargs) -> PolarsResult<Se
     }
     concatenate_rows("pca", rows, pca_dtype(&[])?)
 }
+
+mod timeseries;

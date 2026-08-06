@@ -11,4 +11,5 @@ mod pca;
 mod result;
 mod spd;
 mod states;
+mod timeseries;
 mod weights;
