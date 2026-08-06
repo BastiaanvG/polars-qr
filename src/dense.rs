@@ -116,11 +116,6 @@ impl DenseFrame {
         self.values.as_ref()
     }
 
-    /// The number of usable observations in the matrix.
-    pub fn n_rows(&self) -> usize {
-        self.values.nrows()
-    }
-
     /// The number of columns in the matrix.
     pub fn n_cols(&self) -> usize {
         self.values.ncols()
@@ -176,7 +171,7 @@ mod tests {
         let inputs = [series("a", &[1.0, 2.0]), series("b", &[3.0, 4.0])];
         let dense = DenseFrame::from_series(&inputs, NullPolicy::Raise).unwrap();
 
-        assert_eq!(dense.n_rows(), 2);
+        assert_eq!(dense.matrix().nrows(), 2);
         assert_eq!(dense.n_cols(), 2);
         assert_eq!(dense.matrix()[(0, 0)], 1.0);
         assert_eq!(dense.matrix()[(1, 0)], 2.0);
@@ -247,7 +242,7 @@ mod tests {
         let dense = DenseFrame::from_series(&inputs, NullPolicy::Drop).unwrap();
 
         assert_eq!(dense.height(), 4);
-        assert_eq!(dense.n_rows(), 2);
+        assert_eq!(dense.matrix().nrows(), 2);
         assert_eq!(dense.valid(), [true, false, false, true]);
         assert_eq!(dense.matrix()[(0, 0)], 1.0);
         assert_eq!(dense.matrix()[(1, 0)], 4.0);

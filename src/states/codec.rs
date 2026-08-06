@@ -194,17 +194,6 @@ impl<'a> Reader<'a> {
         self.schema
     }
 
-    /// Fail unless `other` was built for the same schema.
-    pub fn agrees_with(&self, other: &Reader<'_>) -> PolarsResult<()> {
-        if self.schema != other.schema {
-            polars_bail!(
-                ComputeError:
-                "these states were built for different columns, so they cannot be merged",
-            );
-        }
-        Ok(())
-    }
-
     fn take(&mut self, count: usize) -> PolarsResult<&'a [u8]> {
         let end = self.at + count;
         if end > self.bytes.len() {
@@ -328,8 +317,7 @@ mod tests {
 
         let one = Reader::new(&one, Kind::Covariance).unwrap();
         let other = Reader::new(&other, Kind::Covariance).unwrap();
-        assert!(one.agrees_with(&other).is_err());
-        assert!(one.agrees_with(&one).is_ok());
+        assert_ne!(one.schema(), other.schema());
     }
 
     #[test]

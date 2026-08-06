@@ -79,9 +79,9 @@ pub fn from_moments(
 ) -> PolarsResult<Covariance> {
     let p = means.len();
     let divisor = sum_weights - options.ddof * sum_squared_weights / sum_weights;
-    // Written to catch a divisor that is not a number as well as one that is too small: an
-    // empty sample makes the correction term 0/0, and NaN passes every ordinary comparison.
-    if !(divisor > 0.0) {
+    // The divisor is checked for being not a number as well as for being too small: an
+    // empty sample makes the correction term 0/0, and a NaN would slip past `<= 0.0`.
+    if divisor.is_nan() || divisor <= 0.0 {
         polars_bail!(
             ComputeError:
             "{} observations with ddof={} leaves nothing to divide by",

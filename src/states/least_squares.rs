@@ -9,7 +9,6 @@
 //! result independent of how the rows were partitioned, and it keeps the numerics of a QR
 //! rather than falling back on normal equations, which square the condition number.
 
-use faer::linalg::solvers::SolveLstsq;
 use faer::{Mat, MatRef};
 use polars::prelude::*;
 
@@ -217,13 +216,6 @@ fn triangular_factor(matrix: MatRef<'_, f64>) -> Mat<f64> {
             0.0
         }
     })
-}
-
-/// Solve a least-squares problem that is already in triangular form.
-///
-/// Used by the finaliser once the state has been split into its design and target blocks.
-pub fn solve_triangular(design: MatRef<'_, f64>, targets: MatRef<'_, f64>) -> Mat<f64> {
-    design.qr().solve_lstsq(targets)
 }
 
 #[cfg(test)]
