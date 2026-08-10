@@ -36,7 +36,15 @@ module-name = "polars_qr._internal"
 features = ["pyo3/extension-module"]
 
 [dependency-groups]
-dev = [{ include-group = "lint" }, { include-group = "test" }, { include-group = "docs" }]
+dev = [
+    { include-group = "build" },
+    { include-group = "lint" },
+    { include-group = "test" },
+    { include-group = "docs" },
+]
+# Nothing can be imported until the extension is built, so the tool that builds it is a
+# dependency of running the tests and not only of publishing.
+build = ["maturin>=1.9,<2"]
 lint = ["mypy>=1.18", "ruff>=0.14"]
 test = ["numpy>=2.3", "pytest>=8.4"]
 docs = [

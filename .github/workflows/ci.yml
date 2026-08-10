@@ -52,7 +52,7 @@ jobs:
         with:
           enable-cache: true
           python-version: ${{ matrix.python }}
-      - run: uv sync --group test --group lint
+      - run: uv sync --group build --group test --group lint
       # The extension has to be built before anything can import it; a Python-only change
       # still needs this step, because the wheel in the environment is where it lives.
       - run: uv run maturin develop --release --uv
