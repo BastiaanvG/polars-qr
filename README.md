@@ -1,5 +1,11 @@
 # polars-qr
 
+[![PyPI](https://img.shields.io/pypi/v/polars-qr.svg)](https://pypi.org/project/polars-qr/)
+[![Python](https://img.shields.io/pypi/pyversions/polars-qr.svg)](https://pypi.org/project/polars-qr/)
+[![CI](https://github.com/BastiaanvG/polars-qr/actions/workflows/ci.yml/badge.svg)](https://github.com/BastiaanvG/polars-qr/actions/workflows/ci.yml)
+[![Documentation](https://img.shields.io/badge/docs-latest-1f6feb.svg)](https://bastiaanvg.github.io/polars-qr/)
+[![Licence](https://img.shields.io/pypi/l/polars-qr.svg)](https://github.com/BastiaanvG/polars-qr/blob/main/LICENSE)
+
 Dense numerical operations for [Polars](https://pola.rs), backed by
 [faer](https://github.com/sarah-quinones/faer-rs).
 

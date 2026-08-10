@@ -14,7 +14,12 @@ classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Science/Research",
     "Operating System :: OS Independent",
+    # These are what the pyversions badge reads; the extension is built against the stable
+    # ABI from 3.11 up, and CI runs the ends of the range.
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Programming Language :: Rust",
     "Topic :: Scientific/Engineering :: Mathematics",
     "Typing :: Typed",
