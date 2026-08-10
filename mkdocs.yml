@@ -37,15 +37,7 @@ nav:
       - Partitioned data: guide/states.md
       - Statistics against a clock: guide/timeseries.md
       - Autoregression: guide/autoregression.md
-  - Examples:
-      - Overview: examples/index.md
-      - Least squares: examples/least_squares.md
-      - Grouped and lazy: examples/grouped.md
-      - Principal components: examples/components.md
-      - Covariance and solving: examples/covariance.md
-      - Partitioned data: examples/partitioned.md
-      - Statistics against a clock: examples/timeseries.md
-      - Autoregression: examples/autoregression.md
+  - Examples: examples/index.md
   - API reference:
       - Least squares: api/least_squares.md
       - Components: api/pca.md
