@@ -23,6 +23,13 @@ classifiers = [
 dependencies = ["polars>=1.43"]
 dynamic = ["version"]
 
+# These are what PyPI shows in the sidebar of the project page.
+[project.urls]
+Homepage = "https://github.com/BastiaanvG/polars-qr"
+Documentation = "https://bastiaanvg.github.io/polars-qr/"
+Repository = "https://github.com/BastiaanvG/polars-qr"
+Issues = "https://github.com/BastiaanvG/polars-qr/issues"
+
 [tool.maturin]
 python-source = "python"
 module-name = "polars_qr._internal"
@@ -44,6 +51,10 @@ docs = [
 line-length = 100
 target-version = "py311"
 src = ["python", "tests", "examples"]
+# These pages hold nothing but a snippet directive inside a ```python fence. The formatter
+# reads it as Python, and `--8<--` is a valid expression, so it comes back out spaced as
+# `--8 < --` and the page then renders with the example missing.
+extend-exclude = ["docs/examples"]
 
 [tool.ruff.lint]
 select = [

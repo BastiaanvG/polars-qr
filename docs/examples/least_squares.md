@@ -4,5 +4,5 @@ Fitting one target, then several against the same feature matrix, then weighting
 observations and shrinking the coefficients.
 
 ```python title="examples/01_least_squares.py"
---8 < --"examples/01_least_squares.py"
+--8<-- "examples/01_least_squares.py"
 ```
