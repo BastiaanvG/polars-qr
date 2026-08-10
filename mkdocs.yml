@@ -4,6 +4,9 @@ site_url: https://bastiaanvg.github.io/polars-qr/
 repo_url: https://github.com/BastiaanvG/polars-qr
 repo_name: BastiaanvG/polars-qr
 edit_uri: ""
+# Every build is strict, so a broken link or a snippet that does not resolve fails here
+# rather than shipping a page with a hole in it.
+strict: true
 
 theme:
   name: material
@@ -47,6 +50,11 @@ nav:
       - Statistics against a clock: api/timeseries.md
       - Autoregression: api/autoregression.md
       - Namespaces: api/namespaces.md
+
+extra:
+  version:
+    provider: mike
+    alias: true
 
 markdown_extensions:
   - admonition

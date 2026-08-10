@@ -9,8 +9,7 @@ readme = "README.md"
 license = "BSD-3-Clause"
 license-files = ["LICENSE"]
 requires-python = ">=3.11"
-authors = [{ name = "Bastiaan van Gaalen" }]
-keywords = ["polars", "faer", "linear-algebra", "least-squares", "pca"]
+keywords =["polars", "faer", "linear-algebra", "least-squares", "pca"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Science/Research",
@@ -53,6 +52,9 @@ docs = [
     "mkdocs>=1.6,<2",
     "mkdocs-material>=9.5",
     "mkdocstrings[python]>=0.27",
+    # Publishes each version into its own directory on the pages branch, and writes the
+    # versions.json the theme's switcher reads.
+    "mike>=2.1",
 ]
 
 [tool.ruff]
