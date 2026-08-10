@@ -1,0 +1,79 @@
+name: release
+
+# Tagging is what publishes. The tag has to match the version in Cargo.toml and
+# pyproject.toml reads its version from there, so there is one place to change it.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  wheels:
+    name: wheels ${{ matrix.platform.runner }} ${{ matrix.platform.target }}
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - runner: ubuntu-latest
+            target: x86_64
+          - runner: ubuntu-24.04-arm
+            target: aarch64
+          - runner: macos-latest
+            target: x86_64
+          - runner: macos-latest
+            target: aarch64
+          - runner: windows-latest
+            target: x64
+    runs-on: ${{ matrix.platform.runner }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - uses: PyO3/maturin-action@v1
+        with:
+          target: ${{ matrix.platform.target }}
+          # One wheel per platform covers every supported Python, because the extension is
+          # built against the stable ABI from 3.11 up.
+          args: --release --out dist
+          sccache: "true"
+          manylinux: auto
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-${{ matrix.platform.runner }}-${{ matrix.platform.target }}
+          path: dist
+
+  sdist:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: PyO3/maturin-action@v1
+        with:
+          command: sdist
+          args: --out dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-sdist
+          path: dist
+
+  publish:
+    needs: [wheels, sdist]
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      # Trusted publishing: PyPI verifies this workflow's identity token, so there is no
+      # API token to store or rotate.
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v5
+        with:
+          pattern: wheels-*
+          merge-multiple: true
+          path: dist
+      - uses: pypa/gh-action-pypi-publish@release/v1
