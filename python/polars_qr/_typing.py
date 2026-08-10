@@ -19,6 +19,17 @@ ClockSpan = int | float | timedelta
 
 TimeseriesNullPolicy = Literal["skip", "raise"]
 
+# Stricter than the rest of the package: there is no `"drop"`, because dropping a row from
+# a sequence closes the gap and quietly redefines every lag that spans it.
+AutoregressionNullPolicy = Literal["raise", "zero"]
+
+AutoregressionMethod = Literal["yule_walker", "burg"]
+
+AutoregressionOutput = Literal["residual", "prediction"]
+
+# An order to fit, or the criterion to choose one by.
+AutoregressionOrder = int | Literal["aic", "bic", "hqic"]
+
 
 def as_expressions(columns: IntoExprColumns) -> list[pl.Expr]:
     """Normalise a column argument into a list of expressions.

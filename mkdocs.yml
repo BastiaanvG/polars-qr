@@ -36,6 +36,7 @@ nav:
       - Positive-definite systems: guide/spd.md
       - Partitioned data: guide/states.md
       - Statistics against a clock: guide/timeseries.md
+      - Autoregression: guide/autoregression.md
   - Examples:
       - Overview: examples/index.md
       - Least squares: examples/least_squares.md
@@ -44,6 +45,7 @@ nav:
       - Covariance and solving: examples/covariance.md
       - Partitioned data: examples/partitioned.md
       - Statistics against a clock: examples/timeseries.md
+      - Autoregression: examples/autoregression.md
   - API reference:
       - Least squares: api/least_squares.md
       - Components: api/pca.md
@@ -51,6 +53,7 @@ nav:
       - Positive-definite systems: api/spd.md
       - Partitioned state: api/states.md
       - Statistics against a clock: api/timeseries.md
+      - Autoregression: api/autoregression.md
       - Namespaces: api/namespaces.md
 
 markdown_extensions:

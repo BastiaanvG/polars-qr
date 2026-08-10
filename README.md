@@ -43,7 +43,7 @@ pip install polars-qr
 
 Statistics measured against a clock of your own — cumulative volume, a trade count,
 cumulative squared return — live in `pq.timeseries` and are documented in
-[docs/timeseries.md](docs/timeseries.md):
+[the guide](https://bastiaanvg.github.io/polars-qr/guide/timeseries/):
 
 | Operation | Returns |
 | --- | --- |
@@ -59,6 +59,27 @@ result = trades.with_columns(
         clock="cumulative_volume",
         half_life=5_000_000,  # five million units of volume, not five million rows
     ).over(["symbol", "session"])
+)
+```
+
+Autoregressive models live in `pq.autoregression`, separately, because a lag counts rows
+where a clock measures distance:
+
+| Operation | Returns |
+| --- | --- |
+| `pq.autoregression.fit` | Coefficients, the white-noise variance, the partial autocorrelations, the variance and criterion at every order, and whether the fit is stationary |
+| `pq.autoregression.autocovariance`, `.autocorrelation` | The sequence up to a maximum lag |
+| `pq.autoregression.partial_autocorrelation` | The reflection coefficients, which is what the recursion produces anyway |
+| `pq.autoregression.transform` | One-step predictions or residuals, aligned with the input rows |
+| `pq.autoregression.solve_toeplitz` | The solution of a symmetric positive-definite Toeplitz system given by its first column |
+
+```python
+fit = (
+    prices.lazy()
+    .group_by("symbol")
+    .agg(pq.autoregression.fit("log_return", order="bic", max_order=20).alias("ar"))
+    .unnest("ar")
+    .collect()
 )
 ```
 
@@ -125,6 +146,20 @@ The matrix is read from a wide frame, one column per matrix column and one row p
 row, with `row_index` fixing which row is which. It is checked for symmetry, shifted along
 the diagonal if asked, factorised once, and every right-hand side is solved against that
 factorisation.
+
+### Autoregression
+
+```python
+whitened = frame.with_columns(
+    residual=pq.autoregression.transform("y", order="bic", max_order=10).over("symbol")
+)
+```
+
+The matrix of a series against its own lags is Toeplitz, and the Levinson–Durbin recursion
+uses that: `O(p²)` rather than `O(p³)`, `p + 1` autocovariances rather than `p` materialised
+lag columns, every lower order computed on the way up so order selection is free, and a fit
+that cannot come out explosive. Fitting the same series through lag columns and
+`pq.least_squares` gives up all four.
 
 ## Partitioned data
 

@@ -1,18 +1,26 @@
-"""The `.qr` namespaces.
+"""The `.qr` and `.ar` namespaces.
 
 On a frame, row-preserving operations read better as methods than as expressions: the
 grouping column, the window and the unnesting are all part of one call instead of three.
 
-On an expression, the timeseries statistics read better with the column they measure in
-front of them. Those methods are wrappers and nothing else — every one of them hands
-straight over to the function of the same name in `polars_qr.timeseries`, which is where
-the arguments, the defaults and the numbers are decided.
+On an expression, a statistic of one column reads better with that column in front of it.
+`.qr` holds the clocked statistics and `.ar` the autoregressive ones, which are separate
+because a clock and a lag are different ideas: a clock measures how far apart two
+observations are, and a lag counts rows.
+
+These methods are wrappers and nothing else — every one of them hands straight over to the
+function of the same name in `polars_qr.timeseries` or `polars_qr.autoregression`, which is
+where the arguments, the defaults and the numbers are decided.
 """
 
 import polars as pl
 
-from polars_qr import timeseries
+from polars_qr import autoregression, timeseries
 from polars_qr._typing import (
+    AutoregressionMethod,
+    AutoregressionNullPolicy,
+    AutoregressionOrder,
+    AutoregressionOutput,
     ClockSpan,
     IntoExpr,
     IntoExprColumns,
@@ -21,7 +29,7 @@ from polars_qr._typing import (
 )
 from polars_qr.pca import pca_transform
 
-__all__ = ["QrExprNamespace", "QrFrame", "QrLazyFrame"]
+__all__ = ["ArExprNamespace", "QrExprNamespace", "QrFrame", "QrLazyFrame"]
 
 
 def _scores(
@@ -325,5 +333,104 @@ class QrExprNamespace:
             clock=clock,
             half_life=half_life,
             min_samples=min_samples,
+            null_policy=null_policy,
+        )
+
+
+@pl.api.register_expr_namespace("ar")
+class ArExprNamespace:
+    """Autoregressive models on the expression they are fitted to."""
+
+    def __init__(self, expr: pl.Expr) -> None:
+        self._expr = expr
+
+    def autocovariance(
+        self,
+        *,
+        max_lag: int,
+        demean: bool = True,
+        unbiased: bool = False,
+        null_policy: AutoregressionNullPolicy = "raise",
+    ) -> pl.Expr:
+        """See :func:`polars_qr.autoregression.autocovariance`."""
+        return autoregression.autocovariance(
+            self._expr,
+            max_lag=max_lag,
+            demean=demean,
+            unbiased=unbiased,
+            null_policy=null_policy,
+        )
+
+    def autocorrelation(
+        self,
+        *,
+        max_lag: int,
+        demean: bool = True,
+        unbiased: bool = False,
+        null_policy: AutoregressionNullPolicy = "raise",
+    ) -> pl.Expr:
+        """See :func:`polars_qr.autoregression.autocorrelation`."""
+        return autoregression.autocorrelation(
+            self._expr,
+            max_lag=max_lag,
+            demean=demean,
+            unbiased=unbiased,
+            null_policy=null_policy,
+        )
+
+    def partial_autocorrelation(
+        self,
+        *,
+        max_lag: int,
+        method: AutoregressionMethod = "yule_walker",
+        demean: bool = True,
+        null_policy: AutoregressionNullPolicy = "raise",
+    ) -> pl.Expr:
+        """See :func:`polars_qr.autoregression.partial_autocorrelation`."""
+        return autoregression.partial_autocorrelation(
+            self._expr,
+            max_lag=max_lag,
+            method=method,
+            demean=demean,
+            null_policy=null_policy,
+        )
+
+    def fit(
+        self,
+        *,
+        order: AutoregressionOrder,
+        max_order: int | None = None,
+        method: AutoregressionMethod = "yule_walker",
+        demean: bool = True,
+        null_policy: AutoregressionNullPolicy = "raise",
+    ) -> pl.Expr:
+        """See :func:`polars_qr.autoregression.fit`."""
+        return autoregression.fit(
+            self._expr,
+            order=order,
+            max_order=max_order,
+            method=method,
+            demean=demean,
+            null_policy=null_policy,
+        )
+
+    def transform(
+        self,
+        *,
+        order: AutoregressionOrder,
+        max_order: int | None = None,
+        method: AutoregressionMethod = "yule_walker",
+        output: AutoregressionOutput = "residual",
+        demean: bool = True,
+        null_policy: AutoregressionNullPolicy = "raise",
+    ) -> pl.Expr:
+        """See :func:`polars_qr.autoregression.transform`."""
+        return autoregression.transform(
+            self._expr,
+            order=order,
+            max_order=max_order,
+            method=method,
+            output=output,
+            demean=demean,
             null_policy=null_policy,
         )

@@ -21,6 +21,13 @@ pub fn optional_float_list(name: &str, values: Option<&[f64]>) -> Series {
     }
 }
 
+/// One row holding the indices `values`, which label an axis rather than measure it.
+pub fn index_list(name: &str, values: impl Iterator<Item = usize>) -> Series {
+    let indices: Vec<u32> = values.map(|value| value as u32).collect();
+    let inner = Series::new(name.into(), indices);
+    Series::new(name.into(), [inner])
+}
+
 /// One row holding the list `values`.
 pub fn string_list(name: &str, values: &[String]) -> Series {
     let inner = Series::new(name.into(), values);
@@ -51,6 +58,11 @@ pub fn number(name: &str, value: f64) -> Series {
 
 /// One row holding a single string.
 pub fn text(name: &str, value: &str) -> Series {
+    Series::new(name.into(), [value])
+}
+
+/// One row holding a single yes or no.
+pub fn flag(name: &str, value: bool) -> Series {
     Series::new(name.into(), [value])
 }
 
@@ -107,6 +119,11 @@ pub fn float_list_dtype() -> DataType {
 /// The dtype of a field written by [`string_list`].
 pub fn string_list_dtype() -> DataType {
     DataType::List(Box::new(DataType::String))
+}
+
+/// The dtype of a field written by [`index_list`].
+pub fn index_list_dtype() -> DataType {
+    DataType::List(Box::new(DataType::UInt32))
 }
 
 /// The dtype of a field written by [`matrix_rows`].

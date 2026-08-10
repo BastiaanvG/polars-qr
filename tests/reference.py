@@ -1,8 +1,12 @@
-"""Reference implementations of the timeseries statistics.
+"""Reference implementations of the timeseries and autoregression statistics.
 
 Written to be read rather than to be fast: one loop, one observation at a time, no state
 that is not obvious. They are the oracle the compiled versions are checked against, so
 where they disagree the reference is what says which one is wrong.
+
+The autoregression oracle deliberately takes the long way round — it builds the Toeplitz
+matrix and eliminates on it — because the whole point of the compiled version is that it
+never does either.
 """
 
 import math
@@ -256,4 +260,98 @@ def rolling_correlation(x, y, clock, window, min_samples=1, min_clock_span=None)
             out.append(None)
             continue
         out.append(cross / math.sqrt(m2_x * m2_y))
+    return out
+
+
+def autocovariance(values, max_lag, demean=True, unbiased=False):
+    """The sequence of covariances of a series with its own lags."""
+    n = len(values)
+    mean = sum(values) / n if demean else 0.0
+    centred = [value - mean for value in values]
+    sequence = []
+    for lag in range(max_lag + 1):
+        cross = sum(centred[row] * centred[row - lag] for row in range(lag, n))
+        sequence.append(cross / (n - lag if unbiased else n))
+    return sequence
+
+
+def autocorrelation(values, max_lag, demean=True, unbiased=False):
+    sequence = autocovariance(values, max_lag, demean, unbiased)
+    return [value / sequence[0] for value in sequence]
+
+
+def toeplitz(first_column):
+    """The matrix a first column stands for, written out in full."""
+    n = len(first_column)
+    return [[first_column[abs(row - column)] for column in range(n)] for row in range(n)]
+
+
+def dense_solve(matrix, rhs):
+    """Solve by elimination with partial pivoting, which knows nothing of Toeplitz."""
+    n = len(rhs)
+    augmented = [[*row, value] for row, value in zip(matrix, rhs, strict=True)]
+    for pivot in range(n):
+        best = max(range(pivot, n), key=lambda row: abs(augmented[row][pivot]))
+        augmented[pivot], augmented[best] = augmented[best], augmented[pivot]
+        for row in range(pivot + 1, n):
+            factor = augmented[row][pivot] / augmented[pivot][pivot]
+            for column in range(pivot, n + 1):
+                augmented[row][column] -= factor * augmented[pivot][column]
+    solution = [0.0] * n
+    for row in reversed(range(n)):
+        total = augmented[row][n] - sum(
+            augmented[row][column] * solution[column] for column in range(row + 1, n)
+        )
+        solution[row] = total / augmented[row][row]
+    return solution
+
+
+def yule_walker(values, order, demean=True):
+    """Fit an autoregression by building the system and solving it the long way."""
+    if order == 0:
+        return []
+    sequence = autocovariance(values, order, demean)
+    return dense_solve(toeplitz(sequence[:order]), sequence[1 : order + 1])
+
+
+def partial_autocorrelation(values, max_lag, demean=True):
+    """The last coefficient of a separately fitted model of each order."""
+    return [yule_walker(values, order, demean)[-1] for order in range(1, max_lag + 1)]
+
+
+def prediction_error(values, order, demean=True):
+    """What a fit of the given order leaves unexplained."""
+    sequence = autocovariance(values, order, demean)
+    coefficients = yule_walker(values, order, demean)
+    return sequence[0] - sum(
+        coefficient * sequence[lag + 1] for lag, coefficient in enumerate(coefficients)
+    )
+
+
+def criterion(values, max_order, name, demean=True):
+    """The selection criterion at every order from zero to `max_order`."""
+    n = len(values)
+    penalty = {
+        "aic": lambda order: 2 * order,
+        "bic": lambda order: order * math.log(n),
+        "hqic": lambda order: 2 * order * math.log(math.log(n)),
+    }[name]
+    return [
+        n * math.log(prediction_error(values, order, demean)) + penalty(order)
+        for order in range(max_order + 1)
+    ]
+
+
+def autoregression_transform(values, order, output="residual", demean=True):
+    """Apply a fit of the given order to the rows it was fitted on."""
+    n = len(values)
+    mean = sum(values) / n if demean else 0.0
+    centred = [value - mean for value in values]
+    coefficients = yule_walker(values, order, demean)
+    out = [None] * order
+    for row in range(order, n):
+        prediction = sum(
+            coefficient * centred[row - lag - 1] for lag, coefficient in enumerate(coefficients)
+        )
+        out.append(mean + prediction if output == "prediction" else centred[row] - prediction)
     return out

@@ -38,8 +38,14 @@ Guides and the API reference are in `docs/`, published with MkDocs. The public c
 what an operation reads, what it returns, how nulls and weights are treated — are in
 `docs/guide/contracts.md`, and each operation family has a guide page beside it.
 
-`.claude/rules/` holds the working notes for each part of the codebase; they load when you
-open a file they cover.
+The Python package is one module per operation family under `python/polars_qr/`, each one
+thin: it normalises its arguments, works out the output names, and hands over to a plugin
+function of the same name in `src/expressions/`. The numerics live under `src/`, in a
+module that knows nothing about Polars beyond its error type.
+
+`pq.timeseries` and `pq.autoregression` are separate namespaces on purpose. A clock measures
+how far apart two observations are and a lag counts rows; neither argument makes sense in
+the other's family.
 
 ## Before changing numerical behaviour
 

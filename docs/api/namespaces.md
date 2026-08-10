@@ -8,3 +8,5 @@ do is available as an ordinary function; a namespace only puts the column in fro
 ::: polars_qr.QrFrame
 
 ::: polars_qr.QrLazyFrame
+
+::: polars_qr.ArExprNamespace

@@ -43,6 +43,7 @@ ships compiled.
 | [Positive-definite systems](guide/spd.md) | One Cholesky factorisation, any number of right-hand sides |
 | [Partitioned data](guide/states.md) | Summaries that merge, so a fit can be assembled from partitions |
 | [Statistics against a clock](guide/timeseries.md) | Rolling and decaying statistics measured against cumulative volume, a trade count, or anything else that only moves forward |
+| [Autoregression](guide/autoregression.md) | Fitting a series against its own lags through the structure that makes it cheap, with the diagnostics that fall out |
 
 ## What this is not
 
