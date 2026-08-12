@@ -2,70 +2,70 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
     <url>
          <loc>https://bastiaanvg.github.io/polars-qr/0.3/</loc>
-         <lastmod>2026-08-10</lastmod>
+         <lastmod>2026-08-12</lastmod>
     </url>
     <url>
          <loc>https://bastiaanvg.github.io/polars-qr/0.3/api/autoregression/</loc>
-         <lastmod>2026-08-10</lastmod>
+         <lastmod>2026-08-12</lastmod>
     </url>
     <url>
          <loc>https://bastiaanvg.github.io/polars-qr/0.3/api/covariance/</loc>
-         <lastmod>2026-08-10</lastmod>
+         <lastmod>2026-08-12</lastmod>
     </url>
     <url>
          <loc>https://bastiaanvg.github.io/polars-qr/0.3/api/least_squares/</loc>
-         <lastmod>2026-08-10</lastmod>
+         <lastmod>2026-08-12</lastmod>
     </url>
     <url>
          <loc>https://bastiaanvg.github.io/polars-qr/0.3/api/namespaces/</loc>
-         <lastmod>2026-08-10</lastmod>
+         <lastmod>2026-08-12</lastmod>
     </url>
     <url>
          <loc>https://bastiaanvg.github.io/polars-qr/0.3/api/pca/</loc>
-         <lastmod>2026-08-10</lastmod>
+         <lastmod>2026-08-12</lastmod>
     </url>
     <url>
          <loc>https://bastiaanvg.github.io/polars-qr/0.3/api/spd/</loc>
-         <lastmod>2026-08-10</lastmod>
+         <lastmod>2026-08-12</lastmod>
     </url>
     <url>
          <loc>https://bastiaanvg.github.io/polars-qr/0.3/api/states/</loc>
-         <lastmod>2026-08-10</lastmod>
+         <lastmod>2026-08-12</lastmod>
     </url>
     <url>
          <loc>https://bastiaanvg.github.io/polars-qr/0.3/api/timeseries/</loc>
-         <lastmod>2026-08-10</lastmod>
+         <lastmod>2026-08-12</lastmod>
     </url>
     <url>
          <loc>https://bastiaanvg.github.io/polars-qr/0.3/examples/</loc>
-         <lastmod>2026-08-10</lastmod>
+         <lastmod>2026-08-12</lastmod>
     </url>
     <url>
          <loc>https://bastiaanvg.github.io/polars-qr/0.3/guide/autoregression/</loc>
-         <lastmod>2026-08-10</lastmod>
+         <lastmod>2026-08-12</lastmod>
     </url>
     <url>
          <loc>https://bastiaanvg.github.io/polars-qr/0.3/guide/contracts/</loc>
-         <lastmod>2026-08-10</lastmod>
+         <lastmod>2026-08-12</lastmod>
     </url>
     <url>
          <loc>https://bastiaanvg.github.io/polars-qr/0.3/guide/least_squares/</loc>
-         <lastmod>2026-08-10</lastmod>
+         <lastmod>2026-08-12</lastmod>
     </url>
     <url>
          <loc>https://bastiaanvg.github.io/polars-qr/0.3/guide/moments/</loc>
-         <lastmod>2026-08-10</lastmod>
+         <lastmod>2026-08-12</lastmod>
     </url>
     <url>
          <loc>https://bastiaanvg.github.io/polars-qr/0.3/guide/spd/</loc>
-         <lastmod>2026-08-10</lastmod>
+         <lastmod>2026-08-12</lastmod>
     </url>
     <url>
          <loc>https://bastiaanvg.github.io/polars-qr/0.3/guide/states/</loc>
-         <lastmod>2026-08-10</lastmod>
+         <lastmod>2026-08-12</lastmod>
     </url>
     <url>
          <loc>https://bastiaanvg.github.io/polars-qr/0.3/guide/timeseries/</loc>
-         <lastmod>2026-08-10</lastmod>
+         <lastmod>2026-08-12</lastmod>
     </url>
 </urlset>
